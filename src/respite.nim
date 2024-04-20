@@ -9,6 +9,12 @@ import std/nativesockets, std/os, std/selectors, std/sets, std/options,
     std/strutils, std/parseutils, std/deques, respite/sqlite3, std/tables, std/times,
     std/decls
 
+when defined(linux):
+  import std/posix
+
+  let SOCK_NONBLOCK
+    {.importc: "SOCK_NONBLOCK", header: "<sys/socket.h>".}: cint
+
 const
   listenBacklogLen = 128
   maxEventsPerSelectLoop = 64
