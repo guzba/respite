@@ -1,6 +1,6 @@
 version     = "0.0.0"
 author      = "Ryan Oldenburg"
-description = "Redis protocol on SQLite"
+description = "Redis protocol backed by SQLite"
 license     = "MIT"
 
 srcDir = "src"
