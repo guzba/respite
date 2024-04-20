@@ -70,6 +70,7 @@ const schema = """
   pragma foreign_keys = on;
   pragma temp_store = memory;
   pragma mmap_size = 268435456;
+  pragma cache_size = -64000;
   pragma busy_timeout = 60000;
 
   create table if not exists redis_keys (
