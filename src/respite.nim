@@ -1,5 +1,3 @@
-# redis-benchmark -c 10 -n 1000000 -r 10000 -t get,set
-
 when not defined(nimdoc):
   when not defined(gcArc) and not defined(gcOrc):
     {.error: "Using --mm:arc or --mm:orc is required by Respite.".} # TODO
