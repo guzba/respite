@@ -1610,7 +1610,6 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
     except:
       return floatErrorReply
 
-
   deleteRedisSortedSetMembersInRange(redisKey.unsafeGet.id, scores[0], scores[1])
 
   let deleted = sqlite3_changes64(db)
