@@ -38,7 +38,9 @@ type
     buffer: string
     bytesSent: int
 
-  RedisCommand = seq[string]
+  RedisCommand = object
+    raw, normalized: string
+    args: seq[string]
 
   ArgumentValueKind = enum
     BlobValue, IntegerValue, RealValue, NullValue
@@ -864,24 +866,24 @@ const
   wrongTypeErrorReply = simpleErrorReply("WRONGTYPE Operation against a key holding the wrong kind of value")
 
 proc echoCommand(cmd: RedisCommand): string =
-  if cmd.len == 2:
-    bulkStringReply(cmd[1])
+  if cmd.args.len == 1:
+    bulkStringReply(cmd.args[0])
   else:
-    wrongNumberOfArgsReply(cmd[0])
+    wrongNumberOfArgsReply(cmd.raw)
 
 proc pingCommand(cmd: RedisCommand): string =
-  if cmd.len == 1:
+  if cmd.args.len == 0:
     pongReply
-  elif cmd.len == 2:
-    bulkStringReply(cmd[1])
+  elif cmd.args.len == 1:
+    bulkStringReply(cmd.args[0])
   else:
-    wrongNumberOfArgsReply(cmd[0])
+    wrongNumberOfArgsReply(cmd.raw)
 
 proc getCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != StringKey:
     return wrongTypeErrorReply
 
@@ -891,15 +893,15 @@ proc getCommand(cmd: RedisCommand): string =
     nilReply
 
 proc setCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
   var
-    i = 3
+    i = 2
     nx, xx, get, keepTtl: bool
     ex, exat: Option[int]
-  while i < cmd.len:
-    var normalizedArg = cmd[i]
+  while i < cmd.args.len:
+    var normalizedArg = cmd.args[i]
     for c in normalizedArg.mitems:
       c = toUpperAscii(c)
     case normalizedArg:
@@ -919,9 +921,9 @@ proc setCommand(cmd: RedisCommand): string =
     of "EX":
       if keepTtl or exat.isSome:
         return syntaxErrorReply
-      if i + 1 < cmd.len:
+      if i + 1 < cmd.args.len:
         try:
-          ex = some(parseInt(cmd[i + 1]))
+          ex = some(parseInt(cmd.args[i + 1]))
           i += 2
         except:
           return integerErrorReply
@@ -930,9 +932,9 @@ proc setCommand(cmd: RedisCommand): string =
     of "EXAT":
       if keepTtl or ex.isSome:
         return syntaxErrorReply
-      if i + 1 < cmd.len:
+      if i + 1 < cmd.args.len:
         try:
-          exat = some(parseInt(cmd[i + 1]))
+          exat = some(parseInt(cmd.args[i + 1]))
           i += 2
         except:
           return integerErrorReply
@@ -947,9 +949,9 @@ proc setCommand(cmd: RedisCommand): string =
       return syntaxErrorReply
 
   if (ex.isSome and ex.unsafeGet <= 0) or (exat.isSome and exat.unsafeGet <= 0):
-    return invalidExpireTimeReply(cmd[0])
+    return invalidExpireTimeReply(cmd.raw)
 
-  let existingKey = getRedisKey(cmd[1])
+  let existingKey = getRedisKey(cmd.args[0])
   if (nx and existingKey.isSome) or (xx and not existingKey.isSome):
     # Aborted
     if get and existingKey.isSome:
@@ -975,9 +977,9 @@ proc setCommand(cmd: RedisCommand): string =
       if keepTtl:
         discard
       elif existingKey.unsafeGet.expires.isSome or expires > 0:
-        setRedisKeyExpires(cmd[1], expires)
+        setRedisKeyExpires(cmd.args[0], expires)
 
-      upsertRedisString2(existingKey.get.id, cmd[2])
+      upsertRedisString2(existingKey.get.id, cmd.args[1])
 
       if get:
         return bulkStringReply(existingRedisStringForGet)
@@ -990,38 +992,35 @@ proc setCommand(cmd: RedisCommand): string =
         if keepTtl and existingKey.unsafeGet.expires.isSome:
           expires = existingKey.unsafeGet.expires.unsafeGet
 
-        deleteRedisKey2(cmd[1])
-        discard insertNewRedisString(cmd[1], cmd[2], expires)
+        deleteRedisKey2(cmd.args[0])
+        discard insertNewRedisString(cmd.args[0], cmd.args[1], expires)
 
         return okReply
   else:
-    discard insertNewRedisString(cmd[1], cmd[2], expires)
+    discard insertNewRedisString(cmd.args[0], cmd.args[1], expires)
     if get:
       return nilReply
     else:
       return okReply
 
 proc delCommand(cmd: RedisCommand): string =
-  if cmd.len > 2:
-    var keys: seq[string]
-    for i in 1 ..< cmd.len:
-      keys.add(cmd[i])
-    let stmt = stepSqlIn("delete from redis_keys where redis_key", keys)
+  if cmd.args.len > 1:
+    let stmt = stepSqlIn("delete from redis_keys where redis_key", cmd.args)
     discard sqlite3_finalize(stmt)
     integerReply(sqlite3_changes64(db))
-  elif cmd.len == 2:
-    deleteRedisKey2(cmd[1])
+  elif cmd.args.len == 1:
+    deleteRedisKey2(cmd.args[0])
     integerReply(sqlite3_changes64(db))
   else:
-    wrongNumberOfArgsReply(cmd[0])
+    wrongNumberOfArgsReply(cmd.raw)
 
 proc expireCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
   var nx, xx, lt, gt: bool
-  for i in 3 ..< cmd.len:
-    var normalizedArg = cmd[i]
+  for i in 2 ..< cmd.args.len:
+    var normalizedArg = cmd.args[i]
     for c in normalizedArg.mitems:
       c = toUpperAscii(c)
     case normalizedArg:
@@ -1049,14 +1048,14 @@ proc expireCommand(cmd: RedisCommand): string =
     expires: int
     integerError: bool
   try:
-    if cmd[0].len == 8: # EXPIREAT
-      expires = parseInt(cmd[2])
+    if cmd.normalized == "EXPIREAT":
+      expires = parseInt(cmd.args[1])
     else: # EXPIRE
-      expires = now + parseInt(cmd[2])
+      expires = now + parseInt(cmd.args[1])
   except:
     return integerErrorReply
 
-  let existingKey = getRedisKey(cmd[1])
+  let existingKey = getRedisKey(cmd.args[0])
   if existingKey.isSome:
     if existingKey.unsafeGet.expires.isSome:
       if nx or
@@ -1064,26 +1063,26 @@ proc expireCommand(cmd: RedisCommand): string =
         (gt and expires <= existingKey.unsafeGet.expires.unsafeGet):
         integerReply(0)
       else:
-        setRedisKeyExpires(cmd[1], expires)
+        setRedisKeyExpires(cmd.args[0], expires)
         integerReply(1)
     else:
       if xx or gt:
         integerReply(0)
       else:
-        setRedisKeyExpires(cmd[1], expires)
+        setRedisKeyExpires(cmd.args[0], expires)
         integerReply(1)
   else:
     integerReply(0)
 
 proc ttlCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome:
     if redisKey.unsafeGet.expires.isSome:
       var expires = redisKey.unsafeGet.expires.unsafeGet
-      if cmd[0].len == 10: # EXPIRETIME
+      if cmd.normalized == "EXPIRETIME":
         discard
       else: # TTL
         expires -= epochTime().int
@@ -1094,39 +1093,36 @@ proc ttlCommand(cmd: RedisCommand): string =
     integerReply(-2)
 
 proc existsCommand(cmd: RedisCommand): string =
-  if cmd.len > 2:
-    var keys: seq[string]
-    for i in 1 ..< cmd.len:
-      keys.add(cmd[i])
-    let stmt = stepSqlIn("select count(*) from redis_keys where redis_key", keys)
+  if cmd.args.len > 1:
+    let stmt = stepSqlIn("select count(*) from redis_keys where redis_key", cmd.args)
     try:
       integerReply(sqlite3_column_int64(stmt, 0))
     finally:
       discard sqlite3_finalize(stmt)
-  elif cmd.len == 2:
-    if getRedisKey(cmd[1]).isSome:
+  elif cmd.args.len == 1:
+    if getRedisKey(cmd.args[0]).isSome:
       integerReply(1)
     else:
       integerReply(0)
   else:
-    wrongNumberOfArgsReply(cmd[0])
+    wrongNumberOfArgsReply(cmd.raw)
 
 proc persistCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.expires.isSome:
-      setRedisKeyExpires(cmd[1], -1)
+      setRedisKeyExpires(cmd.args[0], -1)
       integerReply(1)
   else:
     integerReply(0)
 
 proc typeCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome:
     case redisKey.unsafeGet.kind:
     of StringKey:
@@ -1162,66 +1158,66 @@ proc incrbyCommand(key: string, increment: int): string =
     integerReply(increment)
 
 proc getdelCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind == StringKey:
     let value = getRedisString(redisKey.unsafeGet.id)
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
     bulkStringReply(value)
   else:
     nilReply
 
 proc hsetCommand(cmd: RedisCommand): string =
-  if cmd.len < 4 or cmd.len mod 2 != 0:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 3 or cmd.args.len mod 2 == 0:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  var redisKey = getRedisKey(cmd[1])
+  var redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != HashKey:
     return wrongTypeErrorReply
 
   var inserted: int
 
   if not redisKey.isSome:
-    redisKey = some(insertNewRedisKey(cmd[1], HashKey))
+    redisKey = some(insertNewRedisKey(cmd.args[0], HashKey))
 
-  var i = 2
-  while i < cmd.len:
-    if not redisHashFieldExists(redisKey.unsafeGet.id, cmd[i]):
+  var i = 1
+  while i < cmd.args.len:
+    if not redisHashFieldExists(redisKey.unsafeGet.id, cmd.args[i]):
       inc inserted
-    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[i], cmd[i + 1])
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd.args[i], cmd.args[i + 1])
     i += 2
 
   integerReply(inserted)
 
 proc hsetnxCommand(cmd: RedisCommand): string =
-  if cmd.len != 4:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 3:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  var redisKey = getRedisKey(cmd[1])
+  var redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != HashKey:
     return wrongTypeErrorReply
 
   var inserted: int
   if not redisKey.isSome:
-    redisKey = some(insertNewRedisKey(cmd[1], HashKey))
-    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], cmd[3])
+    redisKey = some(insertNewRedisKey(cmd.args[0], HashKey))
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd.args[1], cmd.args[2])
     inserted = 1
-  elif not redisHashFieldExists(redisKey.unsafeGet.id, cmd[2]):
-    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], cmd[3])
+  elif not redisHashFieldExists(redisKey.unsafeGet.id, cmd.args[1]):
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd.args[1], cmd.args[2])
     inserted = 1
 
   integerReply(inserted)
 
 proc hgetCommand(cmd: RedisCommand): string =
-  if cmd.len != 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome:
     if redisKey.unsafeGet.kind == HashKey:
-      let value = getRedisHashField(redisKey.unsafeGet.id, cmd[2])
+      let value = getRedisHashField(redisKey.unsafeGet.id, cmd.args[1])
       if value.isSome:
         bulkStringReply(value.unsafeGet)
       else:
@@ -1232,19 +1228,19 @@ proc hgetCommand(cmd: RedisCommand): string =
     nilReply
 
 proc hincrbyCommand(cmd: RedisCommand): string =
-  if cmd.len != 4:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 3:
+    return wrongNumberOfArgsReply(cmd.raw)
 
   var increment: int
   try:
-    increment = parseInt(cmd[3])
+    increment = parseInt(cmd.args[2])
   except:
     return integerErrorReply
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome:
     if redisKey.unsafeGet.kind == HashKey:
-      let value = getRedisHashField(redisKey.unsafeGet.id, cmd[2])
+      let value = getRedisHashField(redisKey.unsafeGet.id, cmd.args[1])
       var n: int
       if value.isSome:
         try:
@@ -1252,19 +1248,19 @@ proc hincrbyCommand(cmd: RedisCommand): string =
         except:
           return integerErrorReply
       n += increment
-      upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], $n)
+      upsertRedisHashField2(redisKey.unsafeGet.id, cmd.args[1], $n)
       integerReply(n)
     else:
       wrongTypeErrorReply
   else:
-    discard insertNewRedisHash(cmd[1], cmd[2], $increment)
+    discard insertNewRedisHash(cmd.args[0], cmd.args[1], $increment)
     integerReply(increment)
 
 proc hdelCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1272,12 +1268,12 @@ proc hdelCommand(cmd: RedisCommand): string =
     return wrongTypeErrorReply
 
   var deleted: int
-  if cmd.len == 3:
-    deleteRedisHashField2(redisKey.unsafeGet.id, cmd[2])
+  if cmd.args.len == 2:
+    deleteRedisHashField2(redisKey.unsafeGet.id, cmd.args[1])
   else:
     var fields: seq[string]
-    for i in 2 ..< cmd.len:
-      fields.add(cmd[i])
+    for i in 1 ..< cmd.args.len:
+      fields.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_hashes where redis_key_id = ? and field",
       redisKey.unsafeGet.id, 
@@ -1288,31 +1284,31 @@ proc hdelCommand(cmd: RedisCommand): string =
   deleted = sqlite3_changes64(db)
 
   if countRedisHashFields2(redisKey.unsafeGet.id) == 0:
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
 
   integerReply(deleted)
 
 proc hexistsCommand(cmd: RedisCommand): string =
-  if cmd.len != 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
   if redisKey.unsafeGet.kind != HashKey:
     return wrongTypeErrorReply
 
-  if redisHashFieldExists(redisKey.unsafeGet.id, cmd[2]):
+  if redisHashFieldExists(redisKey.unsafeGet.id, cmd.args[1]):
     integerReply(1)
   else:
     integerReply(0)
 
 proc hgetallCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return emptyBulkStringArrayReply
 
@@ -1332,10 +1328,10 @@ proc hgetallCommand(cmd: RedisCommand): string =
   bulkStringArrayReply(msgs)
 
 proc hlenCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1345,10 +1341,10 @@ proc hlenCommand(cmd: RedisCommand): string =
     wrongTypeErrorReply
 
 proc hkeysCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return emptyBulkStringArrayReply
 
@@ -1358,29 +1354,29 @@ proc hkeysCommand(cmd: RedisCommand): string =
     wrongTypeErrorReply
 
 proc saddCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  var redisKey = getRedisKey(cmd[1])
+  var redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
   
   if not redisKey.isSome:
-    redisKey = some(insertNewRedisKey(cmd[1], SetKey))
+    redisKey = some(insertNewRedisKey(cmd.args[0], SetKey))
 
   var inserted: int
-  for i in 2 ..< cmd.len:
-    if not redisSetMemberExists(redisKey.unsafeGet.id, cmd[i]):
+  for i in 1 ..< cmd.args.len:
+    if not redisSetMemberExists(redisKey.unsafeGet.id, cmd.args[i]):
       inc inserted
-    upsertRedisSetMember2(redisKey.unsafeGet.id, cmd[i])
+    upsertRedisSetMember2(redisKey.unsafeGet.id, cmd.args[i])
 
   integerReply(inserted)
 
 proc scardCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1390,26 +1386,26 @@ proc scardCommand(cmd: RedisCommand): string =
     wrongTypeErrorReply
 
 proc sismemberCommand(cmd: RedisCommand): string =
-  if cmd.len != 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
   if redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
 
-  if redisSetMemberExists(redisKey.unsafeGet.id, cmd[2]):
+  if redisSetMemberExists(redisKey.unsafeGet.id, cmd.args[1]):
     integerReply(1)
   else:
     integerReply(0)
 
 proc smembersCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return emptyBulkStringArrayReply
 
@@ -1419,22 +1415,22 @@ proc smembersCommand(cmd: RedisCommand): string =
     wrongTypeErrorReply
 
 proc sremCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
   if redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
 
-  if cmd.len == 3:
-    deleteRedisSetMember2(redisKey.unsafeGet.id, cmd[2])
+  if cmd.args.len == 2:
+    deleteRedisSetMember2(redisKey.unsafeGet.id, cmd.args[1])
   else:
     var members: seq[string]
-    for i in 2 ..< cmd.len:
-      members.add(cmd[i])
+    for i in 1 ..< cmd.args.len:
+      members.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_sets where redis_key_id = ? and member",
       redisKey.unsafeGet.id, 
@@ -1445,15 +1441,15 @@ proc sremCommand(cmd: RedisCommand): string =
   let deleted = sqlite3_changes64(db)
 
   if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
 
   integerReply(deleted)
 
 proc spopCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return nilReply
 
@@ -1465,57 +1461,58 @@ proc spopCommand(cmd: RedisCommand): string =
   deleteRedisSetMember2(redisKey.unsafeGet.id, member)
 
   if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
 
   bulkStringReply(member)
 
 proc zaddCommand(cmd: RedisCommand): string =
-  if cmd.len != 4:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 3:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  var redisKey = getRedisKey(cmd[1])
+  var redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != SortedSetKey:
     return wrongTypeErrorReply
 
   var score: float64
   try:
-    if cmpIgnoreCase(cmd[2], "inf") == 0 or cmpIgnoreCase(cmd[2], "+inf") == 0:
+    if cmpIgnoreCase(cmd.args[1], "inf") == 0 or 
+      cmpIgnoreCase(cmd.args[1], "+inf") == 0:
       score = Inf
-    elif cmpIgnoreCase(cmd[2], "-inf") == 0:
+    elif cmpIgnoreCase(cmd.args[1], "-inf") == 0:
       score = NegInf
     else:
-      score = parseFloat(cmd[2])
+      score = parseFloat(cmd.args[1])
   except:
     return floatErrorReply
 
   if not redisKey.isSome:
-    redisKey = some(insertNewRedisKey(cmd[1], SortedSetKey))
+    redisKey = some(insertNewRedisKey(cmd.args[0], SortedSetKey))
 
   var inserted: int
-  if not redisSortedSetMemberExists(redisKey.unsafeGet.id, cmd[3]):
+  if not redisSortedSetMemberExists(redisKey.unsafeGet.id, cmd.args[2]):
     inc inserted
 
-  upsertRedisSortedSetMember2(redisKey.unsafeGet.id, cmd[3], score)
+  upsertRedisSortedSetMember2(redisKey.unsafeGet.id, cmd.args[2], score)
   
   integerReply(inserted)
 
 proc zremCommand(cmd: RedisCommand): string =
-  if cmd.len < 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len < 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
   if redisKey.unsafeGet.kind != SortedSetKey:
     return wrongTypeErrorReply
 
-  if cmd.len == 3:
-    deleteRedisSortedSetMember2(redisKey.unsafeGet.id, cmd[2])
+  if cmd.args.len == 2:
+    deleteRedisSortedSetMember2(redisKey.unsafeGet.id, cmd.args[1])
   else:
     var members: seq[string]
-    for i in 2 ..< cmd.len:
-      members.add(cmd[i])
+    for i in 1 ..< cmd.args.len:
+      members.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_sorted_sets where redis_key_id = ? and member",
       redisKey.unsafeGet.id, 
@@ -1526,15 +1523,15 @@ proc zremCommand(cmd: RedisCommand): string =
   let deleted = sqlite3_changes64(db)
 
   if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
 
   integerReply(deleted)
 
 proc zcardCommand(cmd: RedisCommand): string =
-  if cmd.len != 2:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1544,27 +1541,27 @@ proc zcardCommand(cmd: RedisCommand): string =
     wrongTypeErrorReply
 
 proc zscoreCommand(cmd: RedisCommand): string =
-  if cmd.len != 3:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 2:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return nilReply
 
   if redisKey.unsafeGet.kind != SortedSetKey:
     return wrongTypeErrorReply
 
-  let score = getRedisSortedSetMemberScore(redisKey.unsafeGet.id, cmd[2])
+  let score = getRedisSortedSetMemberScore(redisKey.unsafeGet.id, cmd.args[1])
   if score.isSome:
     bulkStringReply($score.unsafeGet)
   else:
     nilReply
 
 proc zcountCommand(cmd: RedisCommand): string =
-  if cmd.len != 4:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 3:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1574,22 +1571,23 @@ proc zcountCommand(cmd: RedisCommand): string =
   var scores: array[2, float64]
   for i in 0 .. 1:
     try:
-      if cmpIgnoreCase(cmd[2 + i], "inf") == 0 or cmpIgnoreCase(cmd[2 + i], "+inf") == 0:
+      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or 
+        cmpIgnoreCase(cmd.args[1 + i], "+inf") == 0:
         scores[i] = Inf
-      elif cmpIgnoreCase(cmd[2 + i], "-inf") == 0:
+      elif cmpIgnoreCase(cmd.args[1 + i], "-inf") == 0:
         scores[i] = NegInf
       else:
-        scores[i] = parseFloat(cmd[2 + i])
+        scores[i] = parseFloat(cmd.args[1 + i])
     except:
       return floatErrorReply
 
   integerReply(countRedisSortedSetMembersInRange2(redisKey.unsafeGet.id, scores[0], scores[1]))
 
 proc zremrangebyscoreCommand(cmd: RedisCommand): string =
-  if cmd.len != 4:
-    return wrongNumberOfArgsReply(cmd[0])
+  if cmd.args.len != 3:
+    return wrongNumberOfArgsReply(cmd.raw)
 
-  let redisKey = getRedisKey(cmd[1])
+  let redisKey = getRedisKey(cmd.args[0])
   if not redisKey.isSome:
     return integerReply(0)
 
@@ -1599,12 +1597,13 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
   var scores: array[2, float64]
   for i in 0 .. 1:
     try:
-      if cmpIgnoreCase(cmd[2 + i], "inf") == 0 or cmpIgnoreCase(cmd[2 + i], "+inf") == 0:
+      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or 
+        cmpIgnoreCase(cmd.args[1 + i], "+inf") == 0:
         scores[i] = Inf
-      elif cmpIgnoreCase(cmd[2 + i], "-inf") == 0:
+      elif cmpIgnoreCase(cmd.args[1 + i], "-inf") == 0:
         scores[i] = NegInf
       else:
-        scores[i] = parseFloat(cmd[2 + i])
+        scores[i] = parseFloat(cmd.args[1 + i])
     except:
       return floatErrorReply
 
@@ -1614,15 +1613,12 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
   let deleted = sqlite3_changes64(db)
 
   if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
-    deleteRedisKey2(cmd[1])
+    deleteRedisKey2(cmd.args[0])
 
   integerReply(deleted)
 
 proc execute(cmd: RedisCommand): string =
-  var normalizedCommand = cmd[0]
-  for c in normalizedCommand.mitems:
-    c = toUpperAscii(c)
-  case normalizedCommand:
+  case cmd.normalized:
   of "ECHO":
     echoCommand(cmd)
   of "PING":
@@ -1644,19 +1640,19 @@ proc execute(cmd: RedisCommand): string =
   of "TYPE":
     typeCommand(cmd)
   of "DECR", "DECRBY", "INCR", "INCRBY":
-    if (normalizedCommand in ["INCR", "DECR"] and cmd.len == 2) or
-      (normalizedCommand in ["INCRBY", "DECRBY"] and cmd.len == 3):
+    if (cmd.normalized in ["INCR", "DECR"] and cmd.args.len == 1) or
+      (cmd.normalized in ["INCRBY", "DECRBY"] and cmd.args.len == 2):
       var increment = 1
-      if normalizedCommand in ["INCRBY", "DECRBY"]:
+      if cmd.normalized in ["INCRBY", "DECRBY"]:
         try:
-          increment = parseInt(cmd[2])
+          increment = parseInt(cmd.args[1])
         except:
           return integerErrorReply
-      if normalizedCommand in ["DECR", "DECRBY"]:
+      if cmd.normalized in ["DECR", "DECRBY"]:
         increment = -increment
-      incrbyCommand(cmd[1], increment)
+      incrbyCommand(cmd.args[0], increment)
     else:
-      wrongNumberOfArgsReply(cmd[0])
+      wrongNumberOfArgsReply(cmd.raw)
   of "GETDEL":
     getdelCommand(cmd)
   of "HSET":
@@ -1702,7 +1698,7 @@ proc execute(cmd: RedisCommand): string =
   of "ZREMRANGEBYSCORE":
     zremrangebyscoreCommand(cmd)
   else:
-    simpleErrorReply("ERR unknown command '" & cmd[0] & '\'')
+    simpleErrorReply("ERR unknown command '" & cmd.raw & '\'')
 
 proc popRedisCommand(dataEntry: DataEntry, pos: var int): Option[RedisCommand] =
 
@@ -1756,11 +1752,17 @@ proc popRedisCommand(dataEntry: DataEntry, pos: var int): Option[RedisCommand] =
           dataEntry.recvBuf[pos] & " (" & $dataEntry.recvBuf[pos].uint8 & ")"
         )
     var tmp: RedisCommand
-    for (start, len) in bulkStrings:
+    for i, (start, len) in bulkStrings:
       var s = newString(len)
       if len > 0:
         copyMem(s.cstring, dataEntry.recvBuf[start].addr, len)
-      tmp.add(ensureMove s)
+      if i == 0:
+        tmp.raw = ensureMove s
+      else:
+        tmp.args.add(ensureMove s)
+    tmp.normalized = tmp.raw
+    for c in tmp.normalized.mitems:
+      c = toUpperAscii(c)
     return some(ensureMove tmp)
   else:
     raise newException(
