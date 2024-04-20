@@ -10,24 +10,26 @@ nim	SQLITE_ROW	respite/sqlite3.html#SQLITE_ROW	const SQLITE_ROW		23
 nim	SQLITE_DONE	respite/sqlite3.html#SQLITE_DONE	const SQLITE_DONE		24
 nim	SQLITE_STATIC	respite/sqlite3.html#SQLITE_STATIC	const SQLITE_STATIC		25
 nim	SQLITE_TRANSIENT	respite/sqlite3.html#SQLITE_TRANSIENT	const SQLITE_TRANSIENT		26
-nim	sqlite3_open	respite/sqlite3.html#sqlite3_open,cstring,SqliteHandle	proc sqlite3_open(filename: cstring; db: var SqliteHandle): int32		30
-nim	sqlite3_errmsg	respite/sqlite3.html#sqlite3_errmsg,SqliteHandle	proc sqlite3_errmsg(db: SqliteHandle): cstring		35
-nim	sqlite3_changes64	respite/sqlite3.html#sqlite3_changes64,SqliteHandle	proc sqlite3_changes64(db: SqliteHandle): int64		39
-nim	sqlite3_last_insert_rowid	respite/sqlite3.html#sqlite3_last_insert_rowid,SqliteHandle	proc sqlite3_last_insert_rowid(db: SqliteHandle): int64		43
-nim	sqlite3_exec	respite/sqlite3.html#sqlite3_exec,SqliteHandle,cstring,SqliteCallback,pointer,ptr.cstring	proc sqlite3_exec(db: SqliteHandle; sql: cstring; callback: SqliteCallback;\n             callbackUserValue: pointer; errmsg: ptr cstring): int32		47
-nim	sqlite3_prepare_v2	respite/sqlite3.html#sqlite3_prepare_v2,SqliteHandle,cstring,int32,SqliteStatement,ptr.cstring	proc sqlite3_prepare_v2(db: SqliteHandle; zSql: cstring; nByte: int32;\n                   pStatement: var SqliteStatement; pzTail: ptr cstring): int32		55
-nim	sqlite3_finalize	respite/sqlite3.html#sqlite3_finalize,SqliteStatement	proc sqlite3_finalize(statement: SqliteStatement): int32		63
-nim	sqlite3_bind_parameter_count	respite/sqlite3.html#sqlite3_bind_parameter_count,SqliteStatement	proc sqlite3_bind_parameter_count(statement: SqliteStatement): int32		67
-nim	sqlite3_bind_parameter_name	respite/sqlite3.html#sqlite3_bind_parameter_name,SqliteStatement,int32	proc sqlite3_bind_parameter_name(statement: SqliteStatement; index: int32): cstring		71
-nim	sqlite3_bind_null	respite/sqlite3.html#sqlite3_bind_null,SqliteStatement,int32	proc sqlite3_bind_null(statement: SqliteStatement; index: int32): int32		76
-nim	sqlite3_bind_int64	respite/sqlite3.html#sqlite3_bind_int64,SqliteStatement,int32,int64	proc sqlite3_bind_int64(statement: SqliteStatement; index: int32; value: int64): int32		81
-nim	sqlite3_bind_double	respite/sqlite3.html#sqlite3_bind_double,SqliteStatement,int32,float64	proc sqlite3_bind_double(statement: SqliteStatement; index: int32; value: float64): int32		87
-nim	sqlite3_bind_blob64	respite/sqlite3.html#sqlite3_bind_blob64,SqliteStatement,int32,pointer,int64,SqliteBindDestructor	proc sqlite3_bind_blob64(statement: SqliteStatement; index: int32; value: pointer;\n                    len: int64; destructor: SqliteBindDestructor): int32		93
-nim	sqlite3_reset	respite/sqlite3.html#sqlite3_reset,SqliteStatement	proc sqlite3_reset(statement: SqliteStatement): int32		101
-nim	sqlite3_step	respite/sqlite3.html#sqlite3_step,SqliteStatement	proc sqlite3_step(statement: SqliteStatement): int32		105
-nim	sqlite3_column_count	respite/sqlite3.html#sqlite3_column_count,SqliteStatement	proc sqlite3_column_count(statement: SqliteStatement): int32		109
-nim	sqlite3_column_type	respite/sqlite3.html#sqlite3_column_type,SqliteStatement,int32	proc sqlite3_column_type(statement: SqliteStatement; iCol: int32): int32		113
-nim	sqlite3_column_int64	respite/sqlite3.html#sqlite3_column_int64,SqliteStatement,int32	proc sqlite3_column_int64(statement: SqliteStatement; iCol: int32): int64		118
-nim	sqlite3_column_double	respite/sqlite3.html#sqlite3_column_double,SqliteStatement,int32	proc sqlite3_column_double(statement: SqliteStatement; iCol: int32): float64		123
-nim	sqlite3_column_bytes	respite/sqlite3.html#sqlite3_column_bytes,SqliteStatement,int32	proc sqlite3_column_bytes(statement: SqliteStatement; iCol: int32): int32		128
-nim	sqlite3_column_blob	respite/sqlite3.html#sqlite3_column_blob,SqliteStatement,int32	proc sqlite3_column_blob(statement: SqliteStatement; iCol: int32): pointer		133
+nim	sqlite3_libversion	respite/sqlite3.html#sqlite3_libversion	proc sqlite3_libversion(): cstring		30
+nim	sqlite3_libversion_number	respite/sqlite3.html#sqlite3_libversion_number	proc sqlite3_libversion_number(): int32		32
+nim	sqlite3_open	respite/sqlite3.html#sqlite3_open,cstring,SqliteHandle	proc sqlite3_open(filename: cstring; db: var SqliteHandle): int32		34
+nim	sqlite3_errmsg	respite/sqlite3.html#sqlite3_errmsg,SqliteHandle	proc sqlite3_errmsg(db: SqliteHandle): cstring		39
+nim	sqlite3_changes64	respite/sqlite3.html#sqlite3_changes64,SqliteHandle	proc sqlite3_changes64(db: SqliteHandle): int64		43
+nim	sqlite3_last_insert_rowid	respite/sqlite3.html#sqlite3_last_insert_rowid,SqliteHandle	proc sqlite3_last_insert_rowid(db: SqliteHandle): int64		47
+nim	sqlite3_exec	respite/sqlite3.html#sqlite3_exec,SqliteHandle,cstring,SqliteCallback,pointer,ptr.cstring	proc sqlite3_exec(db: SqliteHandle; sql: cstring; callback: SqliteCallback;\n             callbackUserValue: pointer; errmsg: ptr cstring): int32		51
+nim	sqlite3_prepare_v2	respite/sqlite3.html#sqlite3_prepare_v2,SqliteHandle,cstring,int32,SqliteStatement,ptr.cstring	proc sqlite3_prepare_v2(db: SqliteHandle; zSql: cstring; nByte: int32;\n                   pStatement: var SqliteStatement; pzTail: ptr cstring): int32		59
+nim	sqlite3_finalize	respite/sqlite3.html#sqlite3_finalize,SqliteStatement	proc sqlite3_finalize(statement: SqliteStatement): int32		67
+nim	sqlite3_bind_parameter_count	respite/sqlite3.html#sqlite3_bind_parameter_count,SqliteStatement	proc sqlite3_bind_parameter_count(statement: SqliteStatement): int32		71
+nim	sqlite3_bind_parameter_name	respite/sqlite3.html#sqlite3_bind_parameter_name,SqliteStatement,int32	proc sqlite3_bind_parameter_name(statement: SqliteStatement; index: int32): cstring		75
+nim	sqlite3_bind_null	respite/sqlite3.html#sqlite3_bind_null,SqliteStatement,int32	proc sqlite3_bind_null(statement: SqliteStatement; index: int32): int32		80
+nim	sqlite3_bind_int64	respite/sqlite3.html#sqlite3_bind_int64,SqliteStatement,int32,int64	proc sqlite3_bind_int64(statement: SqliteStatement; index: int32; value: int64): int32		85
+nim	sqlite3_bind_double	respite/sqlite3.html#sqlite3_bind_double,SqliteStatement,int32,float64	proc sqlite3_bind_double(statement: SqliteStatement; index: int32; value: float64): int32		91
+nim	sqlite3_bind_blob64	respite/sqlite3.html#sqlite3_bind_blob64,SqliteStatement,int32,pointer,int64,SqliteBindDestructor	proc sqlite3_bind_blob64(statement: SqliteStatement; index: int32; value: pointer;\n                    len: int64; destructor: SqliteBindDestructor): int32		97
+nim	sqlite3_reset	respite/sqlite3.html#sqlite3_reset,SqliteStatement	proc sqlite3_reset(statement: SqliteStatement): int32		105
+nim	sqlite3_step	respite/sqlite3.html#sqlite3_step,SqliteStatement	proc sqlite3_step(statement: SqliteStatement): int32		109
+nim	sqlite3_column_count	respite/sqlite3.html#sqlite3_column_count,SqliteStatement	proc sqlite3_column_count(statement: SqliteStatement): int32		113
+nim	sqlite3_column_type	respite/sqlite3.html#sqlite3_column_type,SqliteStatement,int32	proc sqlite3_column_type(statement: SqliteStatement; iCol: int32): int32		117
+nim	sqlite3_column_int64	respite/sqlite3.html#sqlite3_column_int64,SqliteStatement,int32	proc sqlite3_column_int64(statement: SqliteStatement; iCol: int32): int64		122
+nim	sqlite3_column_double	respite/sqlite3.html#sqlite3_column_double,SqliteStatement,int32	proc sqlite3_column_double(statement: SqliteStatement; iCol: int32): float64		127
+nim	sqlite3_column_bytes	respite/sqlite3.html#sqlite3_column_bytes,SqliteStatement,int32	proc sqlite3_column_bytes(statement: SqliteStatement; iCol: int32): int32		132
+nim	sqlite3_column_blob	respite/sqlite3.html#sqlite3_column_blob,SqliteStatement,int32	proc sqlite3_column_blob(statement: SqliteStatement; iCol: int32): pointer		137
