@@ -10,3 +10,7 @@ nimcache
 *.ilk
 *.out
 .*
+*.obj
+dump.txt
+*.dSYM/
+*.sqlite*
