@@ -1937,7 +1937,7 @@ redisSocket.setSockOptInt(SOL_SOCKET, SO_REUSEADDR, 1)
 
 block:
   let ai = getAddrInfo(
-    "localhost",
+    "0.0.0.0", # TODO
     Port(6379),
     Domain.AF_INET,
     SockType.SOCK_STREAM,
