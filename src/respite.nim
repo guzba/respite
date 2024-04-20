@@ -133,7 +133,7 @@ const schema = """
 let db = block:
   var handle: SqliteHandle
   if sqlite3_open(
-    "test.sqlite",
+    ":memory:",
     handle
   ) != SQLITE_OK:
     raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(handle))

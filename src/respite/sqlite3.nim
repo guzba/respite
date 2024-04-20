@@ -27,6 +27,10 @@ const
 
 {.push importc, cdecl, dynlib: libname.}
 
+proc sqlite3_libversion*(): cstring
+
+proc sqlite3_libversion_number*(): int32
+
 proc sqlite3_open*(
   filename: cstring,
   db: var SqliteHandle
