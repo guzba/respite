@@ -32,6 +32,8 @@ type
       remoteAddress: string
       recvBuf: string
       bytesReceived: int
+      multi: bool
+      queue: Deque[RedisCommand]
       outgoingBuffers: Deque[OutgoingBuffer]
 
   OutgoingBuffer {.acyclic.} = ref object
@@ -847,7 +849,7 @@ proc bulkStringReply(msg: string): string =
 proc bulkStringArrayReply(msgs: seq[string]): string =
   result = '*' & $msgs.len & "\r\n"
   for msg in msgs:
-    result.add bulkStringReply(msg)
+    result.add(bulkStringReply(msg))
 
 proc wrongNumberOfArgsReply(cmd: string): string =
   simpleErrorReply("ERR wrong number of arguments for '" & cmd & "' command")
@@ -858,6 +860,7 @@ proc invalidExpireTimeReply(cmd: string): string =
 const
   pongReply = simpleStringReply("PONG")
   okReply = simpleStringReply("OK")
+  queuedReply = simpleStringReply("QUEUED")
   nilReply = "$-1\r\n"
   emptyBulkStringArrayReply = bulkStringArrayReply(@[])
   syntaxErrorReply = simpleErrorReply("ERR syntax error")
@@ -1787,15 +1790,53 @@ proc afterRecv(clientSocket: SocketHandle): bool =
         startOfNextCmd = some(pos)
         if dataEntry.outgoingBuffers.len == 0:
           needsWriteUpdate = true
-        beginTransaction()
-        try:
-          dataEntry.outgoingBuffers.addLast(
-            OutgoingBuffer(buffer: execute(cmd.unsafeGet))
+        var reply: string
+        if dataEntry.multi:
+          case cmd.unsafeGet.normalized:
+          of "MULTI":
+            reply = simpleErrorReply("ERR MULTI calls can not be nested")
+          of "DISCARD":
+            dataEntry.multi = false
+            dataEntry.queue.clear()
+            reply = okReply
+          of "EXEC":
+            dataEntry.multi = false
+            var replies: seq[string]
+            beginTransaction()
+            try:
+              while dataEntry.queue.len > 0:
+                replies.add(execute(dataEntry.queue.popFirst()))
+              commitTransaction()
+            except:
+              rollbackTransaction()
+              raise
+            reply = '*' & $replies.len & "\r\n"
+            for entry in replies:
+              reply.add(entry)
+          else:
+            dataEntry.queue.addLast(cmd.unsafeGet)
+            reply = queuedReply
+        elif cmd.unsafeGet.normalized == "MULTI":
+          dataEntry.multi = true
+          reply = okReply
+        else:
+          beginTransaction()
+          try:
+            reply = execute(cmd.unsafeGet)
+            commitTransaction()
+          except:
+            rollbackTransaction()
+            raise
+
+        if reply == "":
+          raise newException(
+            CatchableError, 
+            "No reply for command '" & cmd.unsafeGet.raw & '\''
           )
-          commitTransaction()
-        except:
-          rollbackTransaction()
-          raise
+
+        dataEntry.outgoingBuffers.addLast(
+          OutgoingBuffer(buffer: ensureMove reply)
+        )
       else:
         break
   except:
