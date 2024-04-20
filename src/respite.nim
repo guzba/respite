@@ -487,7 +487,7 @@ proc setRedisKeyExpires(key: string, expires: int) =
   finally:
     updateRedisKeyExpires.reset()
 
-proc deleteRedisKeyInner(key: string) =
+proc deleteRedisKey2(key: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key"] = ArgumentValue(kind: BlobValue, b: key)
@@ -515,7 +515,7 @@ proc getRedisString(id: int): string =
   finally:
     selectRedisString.reset()
 
-proc insertNewRedisKeyInner(
+proc insertNewRedisKey(
   key: string, 
   kind: RedisKeyKind, 
   expires: int64 = 0
@@ -538,7 +538,7 @@ proc insertNewRedisKeyInner(
   result.key = key
   result.kind = kind
 
-proc upsertRedisStringInner(id: int, value: string) =
+proc upsertRedisString2(id: int, value: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -548,28 +548,13 @@ proc upsertRedisStringInner(id: int, value: string) =
   finally:
     upsertRedisString.reset()
 
-proc insertNewRedisStringInner(
+proc insertNewRedisString(
   key: string, 
   value: string, 
   expires: int = 0
 ): RedisKey =
-  let newRedisKey = insertNewRedisKeyInner(key, StringKey, expires)
-  upsertRedisStringInner(newRedisKey.id, value)
-  return newRedisKey
-
-proc insertNewRedisString(
-  key: string,
-  value: string, 
-  expires: int = 0
-): RedisKey =
-  var newRedisKey: RedisKey
-  try:
-    beginTransaction()
-    newRedisKey = insertNewRedisStringInner(key, value, expires)
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  let newRedisKey = insertNewRedisKey(key, StringKey, expires)
+  upsertRedisString2(newRedisKey.id, value)
   return newRedisKey
 
 proc redisHashFieldExists(id: int, field: string): bool =
@@ -583,7 +568,7 @@ proc redisHashFieldExists(id: int, field: string): bool =
   finally:
     countRedisHashField.reset()
 
-proc upsertRedisHashFieldInner(id: int, field, value: string) =
+proc upsertRedisHashField2(id: int, field, value: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -614,29 +599,15 @@ proc getRedisHashField(id: int, field: string): Option[string] =
   finally:
     selectRedisHashField.reset()
 
-proc insertNewRedisHashInner(
-  key: string, 
-  field, value: string
-): RedisKey =
-  let newRedisKey = insertNewRedisKeyInner(key, HashKey)
-  upsertRedisHashFieldInner(newRedisKey.id, field, value)
-  return newRedisKey
-
 proc insertNewRedisHash(
   key: string, 
   field, value: string
 ): RedisKey =
-  var newRedisKey: RedisKey
-  try:
-    beginTransaction()
-    newRedisKey = insertNewRedisHashInner(key, field, value)
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  let newRedisKey = insertNewRedisKey(key, HashKey)
+  upsertRedisHashField2(newRedisKey.id, field, value)
   return newRedisKey
 
-proc deleteRedisHashFieldInner(id: int, field: string) =
+proc deleteRedisHashField2(id: int, field: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -715,7 +686,7 @@ proc redisSetMemberExists(id: int, member: string): bool =
   finally:
     countRedisSetMember.reset()
 
-proc upsertRedisSetMemberInner(id: int, member: string) =
+proc upsertRedisSetMember2(id: int, member: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -754,7 +725,7 @@ proc getAllRedisSetMembers(id: int): seq[string] =
   finally:
     selectRedisSetMembers.reset()
 
-proc deleteRedisSetMemberInner(id: int, member: string) =
+proc deleteRedisSetMember2(id: int, member: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -794,7 +765,7 @@ proc redisSortedSetMemberExists(id: int, member: string): bool =
   finally:
     countRedisSortedSetMember.reset()
 
-proc upsertRedisSortedSetMemberInner(id: int, member: string, score: float64) =
+proc upsertRedisSortedSetMember2(id: int, member: string, score: float64) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -815,7 +786,7 @@ proc countRedisSortedSetMembers2(id: int): int =
   finally:
     countRedisSortedSetMembers.reset()
 
-proc deleteRedisSortedSetMemberInner(id: int, member: string) =
+proc deleteRedisSortedSetMember2(id: int, member: string) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -836,7 +807,7 @@ proc getRedisSortedSetMemberScore(id: int, member: string): Option[float64] =
   finally:
     selectRedisSortedSetMemberScore.reset()
 
-proc deleteRedisSortedSetMembersInRangeInner(id: int, min, max: float64) =
+proc deleteRedisSortedSetMembersInRange(id: int, min, max: float64) =
   try:
     var args: Table[string, ArgumentValue]
     args[":redis_key_id"] = ArgumentValue(kind: IntegerValue, i: id)
@@ -1001,17 +972,12 @@ proc setCommand(cmd: RedisCommand): string =
       if get:
         existingRedisStringForGet = getRedisString(existingKey.get.id)
 
-      try:
-        beginTransaction()
-        if keepTtl:
-          discard
-        elif existingKey.unsafeGet.expires.isSome or expires > 0:
-          setRedisKeyExpires(cmd[1], expires)
-        upsertRedisStringInner(existingKey.get.id, cmd[2])
-        commitTransaction()
-      except:
-        rollbackTransaction()
-        raise
+      if keepTtl:
+        discard
+      elif existingKey.unsafeGet.expires.isSome or expires > 0:
+        setRedisKeyExpires(cmd[1], expires)
+
+      upsertRedisString2(existingKey.get.id, cmd[2])
 
       if get:
         return bulkStringReply(existingRedisStringForGet)
@@ -1024,14 +990,8 @@ proc setCommand(cmd: RedisCommand): string =
         if keepTtl and existingKey.unsafeGet.expires.isSome:
           expires = existingKey.unsafeGet.expires.unsafeGet
 
-        try:
-          beginTransaction()
-          deleteRedisKeyInner(cmd[1])
-          discard insertNewRedisStringInner(cmd[1], cmd[2], expires)
-          commitTransaction()
-        except:
-          rollbackTransaction()
-          raise
+        deleteRedisKey2(cmd[1])
+        discard insertNewRedisString(cmd[1], cmd[2], expires)
 
         return okReply
   else:
@@ -1050,7 +1010,7 @@ proc delCommand(cmd: RedisCommand): string =
     discard sqlite3_finalize(stmt)
     integerReply(sqlite3_changes64(db))
   elif cmd.len == 2:
-    deleteRedisKeyInner(cmd[1])
+    deleteRedisKey2(cmd[1])
     integerReply(sqlite3_changes64(db))
   else:
     wrongNumberOfArgsReply(cmd[0])
@@ -1193,7 +1153,7 @@ proc incrbyCommand(key: string, increment: int): string =
       except:
         return integerErrorReply
       n += increment
-      upsertRedisStringInner(redisKey.unsafeGet.id, $n)
+      upsertRedisString2(redisKey.unsafeGet.id, $n)
       integerReply(n)
     else:
       wrongTypeErrorReply
@@ -1208,7 +1168,7 @@ proc getdelCommand(cmd: RedisCommand): string =
   let redisKey = getRedisKey(cmd[1])
   if redisKey.isSome and redisKey.unsafeGet.kind == StringKey:
     let value = getRedisString(redisKey.unsafeGet.id)
-    deleteRedisKeyInner(cmd[1])
+    deleteRedisKey2(cmd[1])
     bulkStringReply(value)
   else:
     nilReply
@@ -1222,25 +1182,18 @@ proc hsetCommand(cmd: RedisCommand): string =
     return wrongTypeErrorReply
 
   var inserted: int
-  try:
-    beginTransaction()
 
-    if not redisKey.isSome:
-      redisKey = some(insertNewRedisKeyInner(cmd[1], HashKey))
+  if not redisKey.isSome:
+    redisKey = some(insertNewRedisKey(cmd[1], HashKey))
 
-    var i = 2
-    while i < cmd.len:
-      if not redisHashFieldExists(redisKey.unsafeGet.id, cmd[i]):
-        inc inserted
-      upsertRedisHashFieldInner(redisKey.unsafeGet.id, cmd[i], cmd[i + 1])
-      i += 2
+  var i = 2
+  while i < cmd.len:
+    if not redisHashFieldExists(redisKey.unsafeGet.id, cmd[i]):
+      inc inserted
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[i], cmd[i + 1])
+    i += 2
 
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
-
-  result = integerReply(inserted)
+  integerReply(inserted)
 
 proc hsetnxCommand(cmd: RedisCommand): string =
   if cmd.len != 4:
@@ -1251,23 +1204,15 @@ proc hsetnxCommand(cmd: RedisCommand): string =
     return wrongTypeErrorReply
 
   var inserted: int
-  try:
-    beginTransaction()
+  if not redisKey.isSome:
+    redisKey = some(insertNewRedisKey(cmd[1], HashKey))
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], cmd[3])
+    inserted = 1
+  elif not redisHashFieldExists(redisKey.unsafeGet.id, cmd[2]):
+    upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], cmd[3])
+    inserted = 1
 
-    if not redisKey.isSome:
-      redisKey = some(insertNewRedisKeyInner(cmd[1], HashKey))
-      upsertRedisHashFieldInner(redisKey.unsafeGet.id, cmd[2], cmd[3])
-      inserted = 1
-    elif not redisHashFieldExists(redisKey.unsafeGet.id, cmd[2]):
-      upsertRedisHashFieldInner(redisKey.unsafeGet.id, cmd[2], cmd[3])
-      inserted = 1
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
-
-  result = integerReply(inserted)
+  integerReply(inserted)
 
 proc hgetCommand(cmd: RedisCommand): string =
   if cmd.len != 3:
@@ -1307,7 +1252,7 @@ proc hincrbyCommand(cmd: RedisCommand): string =
         except:
           return integerErrorReply
       n += increment
-      upsertRedisHashFieldInner(redisKey.unsafeGet.id, cmd[2], $n)
+      upsertRedisHashField2(redisKey.unsafeGet.id, cmd[2], $n)
       integerReply(n)
     else:
       wrongTypeErrorReply
@@ -1327,31 +1272,23 @@ proc hdelCommand(cmd: RedisCommand): string =
     return wrongTypeErrorReply
 
   var deleted: int
-  try:
-    beginTransaction()
+  if cmd.len == 3:
+    deleteRedisHashField2(redisKey.unsafeGet.id, cmd[2])
+  else:
+    var fields: seq[string]
+    for i in 2 ..< cmd.len:
+      fields.add(cmd[i])
+    let stmt = stepSqlIn(
+      "delete from redis_hashes where redis_key_id = ? and field",
+      redisKey.unsafeGet.id, 
+      fields
+    )
+    discard sqlite3_finalize(stmt)
 
-    if cmd.len == 3:
-      deleteRedisHashFieldInner(redisKey.unsafeGet.id, cmd[2])
-    else:
-      var fields: seq[string]
-      for i in 2 ..< cmd.len:
-        fields.add(cmd[i])
-      let stmt = stepSqlIn(
-        "delete from redis_hashes where redis_key_id = ? and field",
-        redisKey.unsafeGet.id, 
-        fields
-      )
-      discard sqlite3_finalize(stmt)
+  deleted = sqlite3_changes64(db)
 
-    deleted = sqlite3_changes64(db)
-
-    if countRedisHashFields2(redisKey.unsafeGet.id) == 0:
-      deleteRedisKeyInner(cmd[1])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  if countRedisHashFields2(redisKey.unsafeGet.id) == 0:
+    deleteRedisKey2(cmd[1])
 
   integerReply(deleted)
 
@@ -1427,23 +1364,15 @@ proc saddCommand(cmd: RedisCommand): string =
   var redisKey = getRedisKey(cmd[1])
   if redisKey.isSome and redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
+  
+  if not redisKey.isSome:
+    redisKey = some(insertNewRedisKey(cmd[1], SetKey))
 
   var inserted: int
-  try:
-    beginTransaction()
-
-    if not redisKey.isSome:
-      redisKey = some(insertNewRedisKeyInner(cmd[1], SetKey))
-
-    for i in 2 ..< cmd.len:
-      if not redisSetMemberExists(redisKey.unsafeGet.id, cmd[i]):
-        inc inserted
-      upsertRedisSetMemberInner(redisKey.unsafeGet.id, cmd[i])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  for i in 2 ..< cmd.len:
+    if not redisSetMemberExists(redisKey.unsafeGet.id, cmd[i]):
+      inc inserted
+    upsertRedisSetMember2(redisKey.unsafeGet.id, cmd[i])
 
   integerReply(inserted)
 
@@ -1500,32 +1429,23 @@ proc sremCommand(cmd: RedisCommand): string =
   if redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
 
-  var deleted: int
-  try:
-    beginTransaction()
+  if cmd.len == 3:
+    deleteRedisSetMember2(redisKey.unsafeGet.id, cmd[2])
+  else:
+    var members: seq[string]
+    for i in 2 ..< cmd.len:
+      members.add(cmd[i])
+    let stmt = stepSqlIn(
+      "delete from redis_sets where redis_key_id = ? and member",
+      redisKey.unsafeGet.id, 
+      members
+    )
+    discard sqlite3_finalize(stmt)
 
-    if cmd.len == 3:
-      deleteRedisSetMemberInner(redisKey.unsafeGet.id, cmd[2])
-    else:
-      var members: seq[string]
-      for i in 2 ..< cmd.len:
-        members.add(cmd[i])
-      let stmt = stepSqlIn(
-        "delete from redis_sets where redis_key_id = ? and member",
-        redisKey.unsafeGet.id, 
-        members
-      )
-      discard sqlite3_finalize(stmt)
+  let deleted = sqlite3_changes64(db)
 
-    deleted = sqlite3_changes64(db)
-
-    if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
-      deleteRedisKeyInner(cmd[1])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
+    deleteRedisKey2(cmd[1])
 
   integerReply(deleted)
 
@@ -1541,18 +1461,11 @@ proc spopCommand(cmd: RedisCommand): string =
     return wrongTypeErrorReply
 
   let member = sampleRedisSetMember2(redisKey.unsafeGet.id)
-  try:
-    beginTransaction()
 
-    deleteRedisSetMemberInner(redisKey.unsafeGet.id, member)
+  deleteRedisSetMember2(redisKey.unsafeGet.id, member)
 
-    if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
-      deleteRedisKeyInner(cmd[1])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  if countRedisSetMembers2(redisKey.unsafeGet.id) == 0:
+    deleteRedisKey2(cmd[1])
 
   bulkStringReply(member)
 
@@ -1575,21 +1488,14 @@ proc zaddCommand(cmd: RedisCommand): string =
   except:
     return floatErrorReply
 
+  if not redisKey.isSome:
+    redisKey = some(insertNewRedisKey(cmd[1], SortedSetKey))
+
   var inserted: int
-  try:
-    beginTransaction()
+  if not redisSortedSetMemberExists(redisKey.unsafeGet.id, cmd[3]):
+    inc inserted
 
-    if not redisKey.isSome:
-      redisKey = some(insertNewRedisKeyInner(cmd[1], SortedSetKey))
-
-    if not redisSortedSetMemberExists(redisKey.unsafeGet.id, cmd[3]):
-      inc inserted
-    upsertRedisSortedSetMemberInner(redisKey.unsafeGet.id, cmd[3], score)
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  upsertRedisSortedSetMember2(redisKey.unsafeGet.id, cmd[3], score)
   
   integerReply(inserted)
 
@@ -1604,32 +1510,23 @@ proc zremCommand(cmd: RedisCommand): string =
   if redisKey.unsafeGet.kind != SortedSetKey:
     return wrongTypeErrorReply
 
-  var deleted: int
-  try:
-    beginTransaction()
+  if cmd.len == 3:
+    deleteRedisSortedSetMember2(redisKey.unsafeGet.id, cmd[2])
+  else:
+    var members: seq[string]
+    for i in 2 ..< cmd.len:
+      members.add(cmd[i])
+    let stmt = stepSqlIn(
+      "delete from redis_sorted_sets where redis_key_id = ? and member",
+      redisKey.unsafeGet.id, 
+      members
+    )
+    discard sqlite3_finalize(stmt)
 
-    if cmd.len == 3:
-      deleteRedisSortedSetMemberInner(redisKey.unsafeGet.id, cmd[2])
-    else:
-      var members: seq[string]
-      for i in 2 ..< cmd.len:
-        members.add(cmd[i])
-      let stmt = stepSqlIn(
-        "delete from redis_sorted_sets where redis_key_id = ? and member",
-        redisKey.unsafeGet.id, 
-        members
-      )
-      discard sqlite3_finalize(stmt)
+  let deleted = sqlite3_changes64(db)
 
-    deleted = sqlite3_changes64(db)
-
-    if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
-      deleteRedisKeyInner(cmd[1])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
+    deleteRedisKey2(cmd[1])
 
   integerReply(deleted)
 
@@ -1711,21 +1608,13 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
     except:
       return floatErrorReply
 
-  var deleted: int
-  try:
-    beginTransaction()
 
-    deleteRedisSortedSetMembersInRangeInner(redisKey.unsafeGet.id, scores[0], scores[1])
+  deleteRedisSortedSetMembersInRange(redisKey.unsafeGet.id, scores[0], scores[1])
 
-    deleted = sqlite3_changes64(db)
+  let deleted = sqlite3_changes64(db)
 
-    if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
-      deleteRedisKeyInner(cmd[1])
-
-    commitTransaction()
-  except:
-    rollbackTransaction()
-    raise
+  if countRedisSortedSetMembers2(redisKey.unsafeGet.id) == 0:
+    deleteRedisKey2(cmd[1])
 
   integerReply(deleted)
 
@@ -1896,9 +1785,15 @@ proc afterRecv(clientSocket: SocketHandle): bool =
         startOfNextCmd = some(pos)
         if dataEntry.outgoingBuffers.len == 0:
           needsWriteUpdate = true
-        dataEntry.outgoingBuffers.addLast(
-          OutgoingBuffer(buffer: execute(cmd.unsafeGet))
-        )
+        beginTransaction()
+        try:
+          dataEntry.outgoingBuffers.addLast(
+            OutgoingBuffer(buffer: execute(cmd.unsafeGet))
+          )
+          commitTransaction()
+        except:
+          rollbackTransaction()
+          raise
       else:
         break
   except:
