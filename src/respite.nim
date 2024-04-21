@@ -1770,9 +1770,10 @@ proc popRedisCommand(dataEntry: DataEntry, pos: var int): Option[RedisCommand] =
       dataEntry.recvBuf[pos] & " (" & $dataEntry.recvBuf[pos].uint8 & ")"
     )
 
-let selector = newSelector[DataEntry]()
-
-proc afterRecv(clientSocket: SocketHandle): bool =
+proc afterRecv(
+  selector: Selector[DataEntry],
+  clientSocket: SocketHandle
+): bool =
   let dataEntry = selector.getData(clientSocket)
 
   var
@@ -1855,158 +1856,164 @@ proc afterRecv(clientSocket: SocketHandle): bool =
       )
       dataEntry.bytesReceived -= startOfNextCmd.unsafeGet
 
-let
-  expireTimerFd = selector.registerTimer(1 * 1000, false, nil)
-  redisSocket = createNativeSocket(
-    Domain.AF_INET,
-    SockType.SOCK_STREAM,
-    Protocol.IPPROTO_TCP,
-    false
-  )
-if redisSocket == osInvalidSocket:
-  raiseOSError(osLastError())
+proc main() =
+  let selector = newSelector[DataEntry]()
 
-redisSocket.setBlocking(false)
-redisSocket.setSockOptInt(SOL_SOCKET, SO_REUSEADDR, 1)
+  let
+    expireTimerFd = selector.registerTimer(1 * 1000, false, nil)
+    redisSocket = createNativeSocket(
+      Domain.AF_INET,
+      SockType.SOCK_STREAM,
+      Protocol.IPPROTO_TCP,
+      false
+    )
+  if redisSocket == osInvalidSocket:
+    raiseOSError(osLastError())
 
-block:
-  let ai = getAddrInfo(
-    "0.0.0.0", # TODO
-    Port(6379),
-    Domain.AF_INET,
-    SockType.SOCK_STREAM,
-    Protocol.IPPROTO_TCP,
-  )
-  try:
-    if bindAddr(redisSocket, ai.ai_addr, ai.ai_addrlen.SockLen) < 0:
-      raiseOSError(osLastError())
-  finally:
-    freeAddrInfo(ai)
+  redisSocket.setBlocking(false)
+  redisSocket.setSockOptInt(SOL_SOCKET, SO_REUSEADDR, 1)
 
-if nativesockets.listen(redisSocket, listenBacklogLen) < 0:
-  raiseOSError(osLastError())
-
-selector.registerHandle(redisSocket, {Read}, DataEntry(kind: ServerSocketEntry))
-
-var
-  readyKeys: array[maxEventsPerSelectLoop, ReadyKey]
-  receivedFrom: seq[SocketHandle]
-  needClosing: HashSet[SocketHandle]
-while true:
-  receivedFrom.setLen(0)
-  needClosing.clear()
-
-  let readyCount = selector.selectInto(-1, readyKeys)
-  for i in 0 ..< readyCount:
-    let readyKey = readyKeys[i]
-
-    # echo "Socket ready: ", readyKey.fd, " ", readyKey.events
-
-    if readyKey.fd == expireTimerFd:
-      let now = epochTime().int
-      if sqlite3_bind_int64(
-        deleteExpiredRedisKeys.stmt,
-        1,
-        now
-      ) != SQLITE_OK:
-        raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
-      discard deleteExpiredRedisKeys.step()
-      deleteExpiredRedisKeys.reset()
-    elif readyKey.fd == redisSocket.int:
-      # We should have a new client socket to accept
-      if Read in readyKey.events:
-        let (clientSocket, remoteAddress) =
-          when defined(linux) and not defined(nimdoc):
-            var
-              sockAddr: SockAddr
-              addrLen = sizeof(sockAddr).SockLen
-            let
-              socket =
-                accept4(
-                  redisSocket,
-                  sockAddr.addr,
-                  addrLen.addr,
-                  SOCK_CLOEXEC or SOCK_NONBLOCK
-                )
-              sockAddrStr =
-                try:
-                  getAddrString(sockAddr.addr)
-                except:
-                  ""
-            (socket, sockAddrStr)
-          else:
-            redisSocket.accept()
-
-        if clientSocket == osInvalidSocket:
-          continue
-
-        when not defined(linux):
-          # Not needed on linux where we can use SOCK_NONBLOCK
-          clientSocket.setBlocking(false)
-
-        let dataEntry = DataEntry(kind: ClientSocketEntry)
-        dataEntry.remoteAddress = remoteAddress
-        dataEntry.recvBuf.setLen(initialRecvBufLen)
-        selector.registerHandle(clientSocket, {Read}, dataEntry)
-
-    else: # Client socket
-      if Error in readyKey.events:
-        needClosing.incl(readyKey.fd.SocketHandle)
-        continue
-
-      let dataEntry = selector.getData(readyKey.fd)
-
-      if Read in readyKey.events:
-        # Expand the buffer if it is full
-        if dataEntry.bytesReceived == dataEntry.recvBuf.len:
-          dataEntry.recvBuf.setLen(dataEntry.recvBuf.len * 2)
-
-        let bytesReceived = readyKey.fd.SocketHandle.recv(
-          dataEntry.recvBuf[dataEntry.bytesReceived].addr,
-          (dataEntry.recvBuf.len - dataEntry.bytesReceived).cint,
-          0
-        )
-        if bytesReceived > 0:
-          dataEntry.bytesReceived += bytesReceived
-          receivedFrom.add(readyKey.fd.SocketHandle)
-        else:
-          needClosing.incl(readyKey.fd.SocketHandle)
-          continue
-
-      if Write in readyKey.events:
-        let
-          outgoingBuffer = dataEntry.outgoingBuffers.peekFirst()
-          bytesSent = readyKey.fd.SocketHandle.send(
-            outgoingBuffer.buffer[outgoingBuffer.bytesSent].addr,
-            (outgoingBuffer.buffer.len - outgoingBuffer.bytesSent).cint,
-            when defined(MSG_NOSIGNAL): MSG_NOSIGNAL else: 0
-          )
-        if bytesSent > 0:
-          outgoingBuffer.bytesSent += bytesSent
-          if outgoingBuffer.bytesSent == outgoingBuffer.buffer.len:
-            # The current outgoing buffer for this socket has been fully sent
-            # Remove it from the outgoing buffer queue
-            dataEntry.outgoingBuffers.shrink(fromFirst = 1)
-          # If we don't have any more outgoing buffers, update the selector
-          if dataEntry.outgoingBuffers.len == 0:
-            selector.updateHandle(readyKey.fd.SocketHandle, {Read})
-        else:
-          needClosing.incl(readyKey.fd.SocketHandle)
-          continue
-
-  for clientSocket in receivedFrom:
-    if clientSocket in needClosing:
-      continue
-    let needsClosing = afterRecv(clientSocket)
-    if needsClosing:
-      needClosing.incl(clientSocket)
-
-  for clientSocket in needClosing:
+  block:
+    let ai = getAddrInfo(
+      "0.0.0.0", # TODO
+      Port(6379),
+      Domain.AF_INET,
+      SockType.SOCK_STREAM,
+      Protocol.IPPROTO_TCP,
+    )
     try:
-      selector.unregister(clientSocket)
-    except:
-      # Should never happen
-      # Leaks DataEntry for this socket
-      discard
+      if bindAddr(redisSocket, ai.ai_addr, ai.ai_addrlen.SockLen) < 0:
+        raiseOSError(osLastError())
     finally:
-      clientSocket.close()
+      freeAddrInfo(ai)
+
+  if nativesockets.listen(redisSocket, listenBacklogLen) < 0:
+    raiseOSError(osLastError())
+
+  selector.registerHandle(redisSocket, {Read}, DataEntry(kind: ServerSocketEntry))
+
+  var
+    readyKeys: array[maxEventsPerSelectLoop, ReadyKey]
+    receivedFrom: seq[SocketHandle]
+    needClosing: HashSet[SocketHandle]
+  while true:
+    receivedFrom.setLen(0)
+    needClosing.clear()
+
+    let readyCount = selector.selectInto(-1, readyKeys)
+    for i in 0 ..< readyCount:
+      let readyKey = readyKeys[i]
+
+      # echo "Socket ready: ", readyKey.fd, " ", readyKey.events
+
+      if readyKey.fd == expireTimerFd:
+        let now = epochTime().int
+        if sqlite3_bind_int64(
+          deleteExpiredRedisKeys.stmt,
+          1,
+          now
+        ) != SQLITE_OK:
+          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+        discard deleteExpiredRedisKeys.step()
+        deleteExpiredRedisKeys.reset()
+      elif readyKey.fd == redisSocket.int:
+        # We should have a new client socket to accept
+        if Read in readyKey.events:
+          let (clientSocket, remoteAddress) =
+            when defined(linux) and not defined(nimdoc):
+              var
+                sockAddr: SockAddr
+                addrLen = sizeof(sockAddr).SockLen
+              let
+                socket =
+                  accept4(
+                    redisSocket,
+                    sockAddr.addr,
+                    addrLen.addr,
+                    SOCK_CLOEXEC or SOCK_NONBLOCK
+                  )
+                sockAddrStr =
+                  try:
+                    getAddrString(sockAddr.addr)
+                  except:
+                    ""
+              (socket, sockAddrStr)
+            else:
+              redisSocket.accept()
+
+          if clientSocket == osInvalidSocket:
+            continue
+
+          when not defined(linux):
+            # Not needed on linux where we can use SOCK_NONBLOCK
+            clientSocket.setBlocking(false)
+
+          let dataEntry = DataEntry(kind: ClientSocketEntry)
+          dataEntry.remoteAddress = remoteAddress
+          dataEntry.recvBuf.setLen(initialRecvBufLen)
+          selector.registerHandle(clientSocket, {Read}, dataEntry)
+
+      else: # Client socket
+        if Error in readyKey.events:
+          needClosing.incl(readyKey.fd.SocketHandle)
+          continue
+
+        let dataEntry = selector.getData(readyKey.fd)
+
+        if Read in readyKey.events:
+          # Expand the buffer if it is full
+          if dataEntry.bytesReceived == dataEntry.recvBuf.len:
+            dataEntry.recvBuf.setLen(dataEntry.recvBuf.len * 2)
+
+          let bytesReceived = readyKey.fd.SocketHandle.recv(
+            dataEntry.recvBuf[dataEntry.bytesReceived].addr,
+            (dataEntry.recvBuf.len - dataEntry.bytesReceived).cint,
+            0
+          )
+          if bytesReceived > 0:
+            dataEntry.bytesReceived += bytesReceived
+            receivedFrom.add(readyKey.fd.SocketHandle)
+          else:
+            needClosing.incl(readyKey.fd.SocketHandle)
+            continue
+
+        if Write in readyKey.events:
+          let
+            outgoingBuffer = dataEntry.outgoingBuffers.peekFirst()
+            bytesSent = readyKey.fd.SocketHandle.send(
+              outgoingBuffer.buffer[outgoingBuffer.bytesSent].addr,
+              (outgoingBuffer.buffer.len - outgoingBuffer.bytesSent).cint,
+              when defined(MSG_NOSIGNAL): MSG_NOSIGNAL else: 0
+            )
+          if bytesSent > 0:
+            outgoingBuffer.bytesSent += bytesSent
+            if outgoingBuffer.bytesSent == outgoingBuffer.buffer.len:
+              # The current outgoing buffer for this socket has been fully sent
+              # Remove it from the outgoing buffer queue
+              dataEntry.outgoingBuffers.shrink(fromFirst = 1)
+            # If we don't have any more outgoing buffers, update the selector
+            if dataEntry.outgoingBuffers.len == 0:
+              selector.updateHandle(readyKey.fd.SocketHandle, {Read})
+          else:
+            needClosing.incl(readyKey.fd.SocketHandle)
+            continue
+
+    for clientSocket in receivedFrom:
+      if clientSocket in needClosing:
+        continue
+      let needsClosing = afterRecv(selector, clientSocket)
+      if needsClosing:
+        needClosing.incl(clientSocket)
+
+    for clientSocket in needClosing:
+      try:
+        selector.unregister(clientSocket)
+      except:
+        # Should never happen
+        # Leaks DataEntry for this socket
+        discard
+      finally:
+        clientSocket.close()
+
+when isMainModule:
+  main()
