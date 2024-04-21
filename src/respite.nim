@@ -88,7 +88,7 @@ const schema = """
     redis_key blob not null,
     kind integer not null,
     expires integer
-  );
+  ) strict;
 
   create unique index if not exists
   redis_keys_unique_idx on redis_keys (redis_key);
@@ -103,7 +103,7 @@ const schema = """
     foreign key (redis_key_id) references redis_keys (id)
       on update cascade
       on delete cascade
-  ) without rowid;
+  ) strict, without rowid;
 
   create table if not exists redis_hashes (
     redis_key_id integer not null,
@@ -112,7 +112,7 @@ const schema = """
     foreign key (redis_key_id) references redis_keys(id)
       on update cascade
       on delete cascade
-  );
+  ) strict;
 
   create unique index if not exists
   redis_hashes_field_unique_idx on redis_hashes (redis_key_id, field);
@@ -123,7 +123,7 @@ const schema = """
     foreign key (redis_key_id) references redis_keys (id)
       on update cascade
       on delete cascade
-  );
+  ) strict;
 
   create unique index if not exists
   redis_sets_member_unique_idx on redis_sets (redis_key_id, member);
@@ -135,7 +135,7 @@ const schema = """
     foreign key (redis_key_id) references redis_keys (id)
       on update cascade
       on delete cascade
-  );
+  ) strict;
 
   create unique index if not exists
   redis_sorted_sets_member_unique_idx on redis_sorted_sets (redis_key_id, member);
