@@ -2,9 +2,6 @@ when not defined(nimdoc):
   when not defined(gcArc) and not defined(gcOrc):
     {.error: "Using --mm:arc or --mm:orc is required by Respite.".} # TODO
 
-when not compileOption("threads"):
-  {.error: "Using --threads:on is required by Respite.".} # TODO
-
 import std/nativesockets, std/os, std/selectors, std/sets, std/options,
     std/strutils, std/parseutils, std/deques, respite/sqlite3, std/tables, std/times,
     std/decls
