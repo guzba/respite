@@ -145,7 +145,7 @@ GET: 45167.12 requests per second, p50=0.167 msec
 
 Very interesting results! It appears is that Redis with `--appendfsync everysec` is running face-first into the IOPS limit of GCP balanced disks, whereas SQLite appears not to. If you can sacrifice durability with `--appendfsync everysec` you avoid this sharp edge.
 
-Performance can be hard to predict. It appears Respite using SQLite would perform far better for write-heavy workloads where risking data-loss is unnacceptable.
+Performance can be hard to predict. It appears Respite using SQLite would perform far better for write-heavy workloads where risking data-loss is unacceptable.
 
 ### M1 MacBook Pro (local client and server, LOW VALUE METRIC!)
 
