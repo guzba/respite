@@ -14,4 +14,5 @@ jobs:
     - uses: jiro4989/setup-nim-action@v1
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - run: nimble install -y ready
     - run: nimble test -y
