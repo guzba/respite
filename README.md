@@ -176,3 +176,11 @@ Redis `redis-server --save "" --appendonly yes`
 SET: 110399.65 requests per second, p50=0.071 msec
 GET: 125659.71 requests per second, p50=0.063 msec
 ```
+
+# Building
+
+To build Respite locally, clone the repo and run the following command from the repo base directory.
+
+`nim c -r -d:release -d:useMalloc -o:respite-server src/respite.nim`
+
+Note that this does require having [Nim](https://nim-lang.org/) installed and in your path.
