@@ -55,6 +55,7 @@ type
       discard
 
   PreparedStatement {.acyclic.} = ref object
+    db: SqliteHandle
     stmt: SqliteStatement
     params: seq[string]
     argsHolder: Table[string, ArgumentValue]
@@ -137,26 +138,9 @@ const schema = """
   redis_sorted_sets_member_unique_idx on redis_sorted_sets (redis_key_id, member);
 """
 
-let db = block:
-  var handle: SqliteHandle
-  if sqlite3_open(
-    ":memory:",
-    handle
-  ) != SQLITE_OK:
-    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(handle))
-  handle
-
-if sqlite3_exec(
-  db,
-  schema.cstring,
-  cast[SqliteCallback](nil),
-  nil,
-  nil
-) != SQLITE_OK:
-  raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
-
 proc newPreparedStatement(db: SqliteHandle, sql: string): PreparedStatement =
   result = PreparedStatement()
+  result.db = db
 
   if sqlite3_prepare_v2(
     db,
@@ -176,7 +160,7 @@ proc newPreparedStatement(db: SqliteHandle, sql: string): PreparedStatement =
 
 proc reset(ps: PreparedStatement) =
   if sqlite3_reset(ps.stmt) != SQLITE_OK:
-    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
   ps.argsHolder.clear()
 
 proc bindArgs(ps: PreparedStatement, args: sink Table[string, ArgumentValue]) =
@@ -198,27 +182,27 @@ proc bindArgs(ps: PreparedStatement, args: sink Table[string, ArgumentValue]) =
           arg.b.len,
           SQLITE_STATIC
         ) != SQLITE_OK:
-          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
       of IntegerValue:
         if sqlite3_bind_int64(
           ps.stmt,
           (i + 1).int32,
           arg.i
         ) != SQLITE_OK:
-          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
       of RealValue:
         if sqlite3_bind_double(
           ps.stmt,
           (i + 1).int32,
           arg.r
         ) != SQLITE_OK:
-          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
       of NullValue:
         if sqlite3_bind_null(
           ps.stmt,
           (i + 1).int32
         ) != SQLITE_OK:
-          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+          raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
     else:
       raise newException(
         CatchableError,
@@ -233,11 +217,11 @@ proc step(ps: PreparedStatement): bool =
   of SQLITE_DONE:
     false
   of SQLITE_ERROR:
-    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(ps.db))
   else:
     raise newException(CatchableError, "Unexpected SQLite result code: " & $code)
 
-proc beginTransaction() =
+proc beginTransaction(db: SqliteHandle) =
   if sqlite3_exec(
     db,
     "BEGIN",
@@ -247,7 +231,7 @@ proc beginTransaction() =
   ) != SQLITE_OK:
     raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
 
-proc rollbackTransaction() =
+proc rollbackTransaction(db: SqliteHandle) =
   if sqlite3_exec(
     db,
     "ROLLBACK",
@@ -257,7 +241,7 @@ proc rollbackTransaction() =
   ) != SQLITE_OK:
     raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
 
-proc commitTransaction() =
+proc commitTransaction(db: SqliteHandle) =
   if sqlite3_exec(
     db,
     "COMMIT",
@@ -267,7 +251,11 @@ proc commitTransaction() =
   ) != SQLITE_OK:
     raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
 
-proc stepSqlIn(sql: string, args: seq[string]): SqliteStatement =
+proc stepSqlIn(
+  db: SqliteHandle,
+  sql: string,
+  args: seq[string]
+): SqliteStatement =
   var sql = sql
   sql.add " in ("
   for i in 0 ..< args.len:
@@ -301,7 +289,12 @@ proc stepSqlIn(sql: string, args: seq[string]): SqliteStatement =
     discard sqlite3_finalize(result)
     raise
 
-proc stepSqlIn(sql: string, id: int, args: seq[string]): SqliteStatement =
+proc stepSqlIn(
+  db: SqliteHandle,
+  sql: string,
+  id: int,
+  args: seq[string]
+): SqliteStatement =
   var sql = sql
   sql.add " in ("
   for i in 0 ..< args.len:
@@ -342,119 +335,35 @@ proc stepSqlIn(sql: string, id: int, args: seq[string]): SqliteStatement =
     discard sqlite3_finalize(result)
     raise
 
-let
-  deleteExpiredRedisKeys = newPreparedStatement(db, """
-    delete from redis_keys
-    where expires is not null and expires <= :now
-  """)
-  selectRedisKey = newPreparedStatement(db, """
-    select id, kind, expires from redis_keys
-    where redis_key = :redis_key
-  """)
-  insertRedisKey = newPreparedStatement(db, """
-    insert into redis_keys (redis_key, kind, expires)
-    values (:redis_key, :kind, :expires);
-  """)
-  updateRedisKeyExpires = newPreparedStatement(db, """
-    update redis_keys set expires = :expires
-    where redis_key = :redis_key
-  """)
-  deleteRedisKey = newPreparedStatement(db, """
-    delete from redis_keys
-    where redis_key = :redis_key
-  """)
-  selectRedisString = newPreparedStatement(db, """
-    select value from redis_strings
-    where redis_key_id = :redis_key_id
-  """)
-  upsertRedisString = newPreparedStatement(db, """
-    insert into redis_strings (redis_key_id, value)
-    values (:redis_key_id, :value)
-    on conflict do update set value = excluded.value
-  """)
-  countRedisHashField = newPreparedStatement(db, """
-    select count(*) from redis_hashes
-    where redis_key_id = :redis_key_id and field = :field
-  """)
-  countRedisHashFields = newPreparedStatement(db, """
-    select count(*) from redis_hashes
-    where redis_key_id = :redis_key_id
-  """)
-  upsertRedisHashField = newPreparedStatement(db, """
-    insert into redis_hashes (redis_key_id, field, value)
-    values (:redis_key_id, :field, :value)
-    on conflict do update set value = excluded.value
-  """)
-  selectRedisHashField = newPreparedStatement(db, """
-    select value from redis_hashes
-    where redis_key_id = :redis_key_id and field = :field
-  """)
-  deleteRedisHashField = newPreparedStatement(db, """
-    delete from redis_hashes
-    where redis_key_id = :redis_key_id and field = :field
-  """)
-  selectRedisHashFieldPairs = newPreparedStatement(db, """
-    select field, value from redis_hashes
-    where redis_key_id = :redis_key_id
-  """)
-  selectRedisHashFields = newPreparedStatement(db, """
-    select field from redis_hashes
-    where redis_key_id = :redis_key_id
-  """)
-  countRedisSetMember = newPreparedStatement(db, """
-    select count(*) from redis_sets
-    where redis_key_id = :redis_key_id and member = :member
-  """)
-  countRedisSetMembers = newPreparedStatement(db, """
-    select count(*) from redis_sets
-    where redis_key_id = :redis_key_id
-  """)
-  upsertRedisSetMember = newPreparedStatement(db, """
-    insert into redis_sets (redis_key_id, member)
-    values (:redis_key_id, :member)
-    on conflict do nothing
-  """)
-  selectRedisSetMembers = newPreparedStatement(db, """
-    select member from redis_sets
-    where redis_key_id = :redis_key_id
-  """)
-  deleteRedisSetMember = newPreparedStatement(db, """
-    delete from redis_sets
-    where redis_key_id = :redis_key_id and member = :member
-  """)
-  sampleRedisSetMember = newPreparedStatement(db, """
-    select member from redis_sets
-    where redis_key_id = :redis_key_id limit 1
-  """)
-  countRedisSortedSetMember = newPreparedStatement(db, """
-    select count(*) from redis_sorted_sets
-    where redis_key_id = :redis_key_id and member = :member
-  """)
-  upsertRedisSortedSetMember = newPreparedStatement(db, """
-    insert into redis_sorted_sets (redis_key_id, member, score)
-    values (:redis_key_id, :member, :score)
-    on conflict do update set score = excluded.score
-  """)
-  countRedisSortedSetMembers = newPreparedStatement(db, """
-    select count(*) from redis_sorted_sets
-    where redis_key_id = :redis_key_id
-  """)
-  deleteRedisSortedSetMember = newPreparedStatement(db, """
-    delete from redis_sorted_sets
-    where redis_key_id = :redis_key_id and member = :member
-  """)
-  selectRedisSortedSetMemberScore = newPreparedStatement(db, """
-    select score from redis_sorted_sets
-    where redis_key_id = :redis_key_id and member = :member
-  """)
-  deleteRedisSortedSetMemberInRange = newPreparedStatement(db, """
-    delete from redis_sorted_sets
-    where redis_key_id = :redis_key_id and score >= :min and score <= :max
-  """)
-  countRedisSortedSetMembersInRange = newPreparedStatement(db, """
-    select count(*) from redis_sorted_sets
-    where redis_key_id = :redis_key_id and score >= :min and score <= :max
-  """)
+var
+  db: SqliteHandle
+  deleteExpiredRedisKeys: PreparedStatement
+  selectRedisKey: PreparedStatement
+  insertRedisKey: PreparedStatement
+  updateRedisKeyExpires: PreparedStatement
+  deleteRedisKey: PreparedStatement
+  selectRedisString: PreparedStatement
+  upsertRedisString: PreparedStatement
+  countRedisHashField: PreparedStatement
+  countRedisHashFields: PreparedStatement
+  upsertRedisHashField: PreparedStatement
+  selectRedisHashField: PreparedStatement
+  deleteRedisHashField: PreparedStatement
+  selectRedisHashFieldPairs: PreparedStatement
+  selectRedisHashFields: PreparedStatement
+  countRedisSetMember: PreparedStatement
+  countRedisSetMembers: PreparedStatement
+  upsertRedisSetMember: PreparedStatement
+  selectRedisSetMembers: PreparedStatement
+  deleteRedisSetMember: PreparedStatement
+  sampleRedisSetMember: PreparedStatement
+  countRedisSortedSetMember: PreparedStatement
+  upsertRedisSortedSetMember: PreparedStatement
+  countRedisSortedSetMembers: PreparedStatement
+  deleteRedisSortedSetMember: PreparedStatement
+  selectRedisSortedSetMemberScore: PreparedStatement
+  deleteRedisSortedSetMemberInRange: PreparedStatement
+  countRedisSortedSetMembersInRange: PreparedStatement
 
 proc getRedisKey(key: string): Option[RedisKey] =
   try:
@@ -1004,7 +913,7 @@ proc setCommand(cmd: RedisCommand): string =
 
 proc delCommand(cmd: RedisCommand): string =
   if cmd.args.len > 1:
-    let stmt = stepSqlIn("delete from redis_keys where redis_key", cmd.args)
+    let stmt = stepSqlIn(db, "delete from redis_keys where redis_key", cmd.args)
     discard sqlite3_finalize(stmt)
     integerReply(sqlite3_changes64(db))
   elif cmd.args.len == 1:
@@ -1093,7 +1002,11 @@ proc ttlCommand(cmd: RedisCommand): string =
 
 proc existsCommand(cmd: RedisCommand): string =
   if cmd.args.len > 1:
-    let stmt = stepSqlIn("select count(*) from redis_keys where redis_key", cmd.args)
+    let stmt = stepSqlIn(
+      db,
+      "select count(*) from redis_keys where redis_key",
+      cmd.args
+    )
     try:
       integerReply(sqlite3_column_int64(stmt, 0))
     finally:
@@ -1274,6 +1187,7 @@ proc hdelCommand(cmd: RedisCommand): string =
     for i in 1 ..< cmd.args.len:
       fields.add(cmd.args[i])
     let stmt = stepSqlIn(
+      db,
       "delete from redis_hashes where redis_key_id = ? and field",
       redisKey.unsafeGet.id,
       fields
@@ -1431,6 +1345,7 @@ proc sremCommand(cmd: RedisCommand): string =
     for i in 1 ..< cmd.args.len:
       members.add(cmd.args[i])
     let stmt = stepSqlIn(
+      db,
       "delete from redis_sets where redis_key_id = ? and member",
       redisKey.unsafeGet.id,
       members
@@ -1513,6 +1428,7 @@ proc zremCommand(cmd: RedisCommand): string =
     for i in 1 ..< cmd.args.len:
       members.add(cmd.args[i])
     let stmt = stepSqlIn(
+      db,
       "delete from redis_sorted_sets where redis_key_id = ? and member",
       redisKey.unsafeGet.id,
       members
@@ -1811,13 +1727,13 @@ proc afterRecv(
           of "EXEC":
             dataEntry.multi = false
             var replies: seq[string]
-            beginTransaction()
+            beginTransaction(db)
             try:
               while dataEntry.queue.len > 0:
                 replies.add(execute(dataEntry.queue.popFirst()))
-              commitTransaction()
+              commitTransaction(db)
             except:
-              rollbackTransaction()
+              rollbackTransaction(db)
               raise
             reply = '*' & $replies.len & "\r\n"
             for entry in replies:
@@ -1829,12 +1745,12 @@ proc afterRecv(
           dataEntry.multi = true
           reply = okReply
         else:
-          beginTransaction()
+          beginTransaction(db)
           try:
             reply = execute(cmd.unsafeGet)
-            commitTransaction()
+            commitTransaction(db)
           except:
-            rollbackTransaction()
+            rollbackTransaction(db)
             raise
 
         if reply == "":
@@ -1870,7 +1786,135 @@ proc afterRecv(
 
 var stopFlag: Atomic[bool]
 
-proc start*(address: string, port: Port) =
+proc start*(address: string, port: Port, dir, dbfilename: string) =
+  if sqlite3_open(
+    dir & dbfilename,
+    db,
+  ) != SQLITE_OK:
+    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+
+  if sqlite3_exec(
+    db,
+    schema.cstring,
+    cast[SqliteCallback](nil),
+    nil,
+    nil
+  ) != SQLITE_OK:
+    raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
+
+  deleteExpiredRedisKeys = newPreparedStatement(db, """
+    delete from redis_keys
+    where expires is not null and expires <= :now
+  """)
+  selectRedisKey = newPreparedStatement(db, """
+    select id, kind, expires from redis_keys
+    where redis_key = :redis_key
+  """)
+  insertRedisKey = newPreparedStatement(db, """
+    insert into redis_keys (redis_key, kind, expires)
+    values (:redis_key, :kind, :expires);
+  """)
+  updateRedisKeyExpires = newPreparedStatement(db, """
+    update redis_keys set expires = :expires
+    where redis_key = :redis_key
+  """)
+  deleteRedisKey = newPreparedStatement(db, """
+    delete from redis_keys
+    where redis_key = :redis_key
+  """)
+  selectRedisString = newPreparedStatement(db, """
+    select value from redis_strings
+    where redis_key_id = :redis_key_id
+  """)
+  upsertRedisString = newPreparedStatement(db, """
+    insert into redis_strings (redis_key_id, value)
+    values (:redis_key_id, :value)
+    on conflict do update set value = excluded.value
+  """)
+  countRedisHashField = newPreparedStatement(db, """
+    select count(*) from redis_hashes
+    where redis_key_id = :redis_key_id and field = :field
+  """)
+  countRedisHashFields = newPreparedStatement(db, """
+    select count(*) from redis_hashes
+    where redis_key_id = :redis_key_id
+  """)
+  upsertRedisHashField = newPreparedStatement(db, """
+    insert into redis_hashes (redis_key_id, field, value)
+    values (:redis_key_id, :field, :value)
+    on conflict do update set value = excluded.value
+  """)
+  selectRedisHashField = newPreparedStatement(db, """
+    select value from redis_hashes
+    where redis_key_id = :redis_key_id and field = :field
+  """)
+  deleteRedisHashField = newPreparedStatement(db, """
+    delete from redis_hashes
+    where redis_key_id = :redis_key_id and field = :field
+  """)
+  selectRedisHashFieldPairs = newPreparedStatement(db, """
+    select field, value from redis_hashes
+    where redis_key_id = :redis_key_id
+  """)
+  selectRedisHashFields = newPreparedStatement(db, """
+    select field from redis_hashes
+    where redis_key_id = :redis_key_id
+  """)
+  countRedisSetMember = newPreparedStatement(db, """
+    select count(*) from redis_sets
+    where redis_key_id = :redis_key_id and member = :member
+  """)
+  countRedisSetMembers = newPreparedStatement(db, """
+    select count(*) from redis_sets
+    where redis_key_id = :redis_key_id
+  """)
+  upsertRedisSetMember = newPreparedStatement(db, """
+    insert into redis_sets (redis_key_id, member)
+    values (:redis_key_id, :member)
+    on conflict do nothing
+  """)
+  selectRedisSetMembers = newPreparedStatement(db, """
+    select member from redis_sets
+    where redis_key_id = :redis_key_id
+  """)
+  deleteRedisSetMember = newPreparedStatement(db, """
+    delete from redis_sets
+    where redis_key_id = :redis_key_id and member = :member
+  """)
+  sampleRedisSetMember = newPreparedStatement(db, """
+    select member from redis_sets
+    where redis_key_id = :redis_key_id limit 1
+  """)
+  countRedisSortedSetMember = newPreparedStatement(db, """
+    select count(*) from redis_sorted_sets
+    where redis_key_id = :redis_key_id and member = :member
+  """)
+  upsertRedisSortedSetMember = newPreparedStatement(db, """
+    insert into redis_sorted_sets (redis_key_id, member, score)
+    values (:redis_key_id, :member, :score)
+    on conflict do update set score = excluded.score
+  """)
+  countRedisSortedSetMembers = newPreparedStatement(db, """
+    select count(*) from redis_sorted_sets
+    where redis_key_id = :redis_key_id
+  """)
+  deleteRedisSortedSetMember = newPreparedStatement(db, """
+    delete from redis_sorted_sets
+    where redis_key_id = :redis_key_id and member = :member
+  """)
+  selectRedisSortedSetMemberScore = newPreparedStatement(db, """
+    select score from redis_sorted_sets
+    where redis_key_id = :redis_key_id and member = :member
+  """)
+  deleteRedisSortedSetMemberInRange = newPreparedStatement(db, """
+    delete from redis_sorted_sets
+    where redis_key_id = :redis_key_id and score >= :min and score <= :max
+  """)
+  countRedisSortedSetMembersInRange = newPreparedStatement(db, """
+    select count(*) from redis_sorted_sets
+    where redis_key_id = :redis_key_id and score >= :min and score <= :max
+  """)
+
   let selector = newSelector[DataEntry]()
 
   let
@@ -2040,6 +2084,8 @@ when isMainModule:
   var
     host = "localhost"
     port = Port(6379)
+    dir = ""
+    dbfilename = "respite.sqlite"
 
   var args = commandLineParams()
   block:
@@ -2062,5 +2108,40 @@ when isMainModule:
             )
         else:
           raise newException(CatchableError, "Bad args, -p expects a port")
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "--dbfilename":
+        if i + 1 < args.len:
+          dbfilename = args[i + 1]
+        else:
+          raise newException(CatchableError, "Bad args, --dbfilename expects a name")
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "--dir":
+        if i + 1 < args.len:
+          dir = args[i + 1]
+        else:
+          raise newException(CatchableError, "Bad args, --dir expects a dir")
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "--save":
+        if i + 1 < args.len:
+          if args[i + 1] == "\"\"":
+            dir = ""
+            dbfilename = ":memory:"
+          else:
+            raise newException(CatchableError, "Bad args, --save must be \"\"")
+        else:
+          raise newException(CatchableError, "Bad args, --save expects a value")
 
-  start(host, port)
+  if dbfilename == "":
+    raise newException(CatchableError, "Bad args, empty dbfilename")
+  elif '/' in dbfilename or '\\' in dbfilename:
+    raise newException(CatchableError, "Bad args, dbfilename contains / or \\")
+
+  if dir.len > 0 and dir[^1] != '/':
+    dir.add '/'
+
+  echo dir & dbfilename
+
+  start(host, port, dir, dbfilename)
