@@ -175,7 +175,7 @@ SET: 110399.65 requests per second, p50=0.071 msec
 GET: 125659.71 requests per second, p50=0.063 msec
 ```
 
-# Building
+## Building
 
 To build Respite locally, clone the repo and run the following command from the repo base directory.
 
