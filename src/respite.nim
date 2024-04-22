@@ -336,6 +336,7 @@ proc stepSqlIn(
     discard sqlite3_finalize(result)
     raise
 
+# TODO
 var
   db: SqliteHandle
   deleteExpiredRedisKeys: PreparedStatement
