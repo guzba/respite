@@ -28,6 +28,7 @@ type
       remoteAddress: string
       recvBuf: string
       bytesReceived: int
+      authenticated: bool
       multi: bool
       queue: Deque[RedisCommand]
       outgoingBuffers: Deque[OutgoingBuffer]
@@ -364,6 +365,7 @@ var
   selectRedisSortedSetMemberScore: PreparedStatement
   deleteRedisSortedSetMemberInRange: PreparedStatement
   countRedisSortedSetMembersInRange: PreparedStatement
+  pwd: string
 
 proc getRedisKey(key: string): Option[RedisKey] =
   try:
@@ -772,6 +774,18 @@ const
   integerErrorReply = simpleErrorReply("ERR value is not an integer or out of range")
   floatErrorReply = simpleErrorReply("ERR value is not a valid float")
   wrongTypeErrorReply = simpleErrorReply("WRONGTYPE Operation against a key holding the wrong kind of value")
+  authRequiredErrorReply = simpleErrorReply("NOAUTH Authentication required.")
+  wrongPassErrorReply = simpleErrorReply("ERR invalid password")
+
+proc authCommand(client: DataEntry, cmd: RedisCommand): string =
+  if cmd.args.len != 1:
+    return wrongNumberOfArgsReply(cmd.raw)
+
+  if cmd.args[0] == pwd:
+    client.authenticated = true
+    okReply
+  else:
+    wrongPassErrorReply
 
 proc echoCommand(cmd: RedisCommand): string =
   if cmd.args.len == 1:
@@ -1536,8 +1550,10 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
 
   integerReply(deleted)
 
-proc execute(cmd: RedisCommand): string =
+proc execute(client: DataEntry, cmd: RedisCommand): string =
   case cmd.normalized:
+  of "AUTH":
+    authCommand(client, cmd)
   of "ECHO":
     echoCommand(cmd)
   of "PING":
@@ -1716,7 +1732,12 @@ proc afterRecv(
         if dataEntry.outgoingBuffers.len == 0:
           needsWriteUpdate = true
         var reply: string
-        if dataEntry.multi:
+        if not dataEntry.authenticated:
+          if cmd.unsafeGet.normalized == "AUTH":
+            reply = authCommand(dataEntry, cmd.unsafeGet)
+          else:
+            reply = authRequiredErrorReply
+        elif dataEntry.multi:
           case cmd.unsafeGet.normalized:
           of "MULTI":
             reply = simpleErrorReply("ERR MULTI calls can not be nested")
@@ -1730,7 +1751,7 @@ proc afterRecv(
             beginTransaction(db)
             try:
               while dataEntry.queue.len > 0:
-                replies.add(execute(dataEntry.queue.popFirst()))
+                replies.add(execute(dataEntry, dataEntry.queue.popFirst()))
               commitTransaction(db)
             except:
               rollbackTransaction(db)
@@ -1747,7 +1768,7 @@ proc afterRecv(
         else:
           beginTransaction(db)
           try:
-            reply = execute(cmd.unsafeGet)
+            reply = execute(dataEntry, cmd.unsafeGet)
             commitTransaction(db)
           except:
             rollbackTransaction(db)
@@ -1786,7 +1807,14 @@ proc afterRecv(
 
 var stopFlag: Atomic[bool]
 
-proc start*(address: string, port: Port, dir, dbfilename: string) =
+proc start*(
+  address: string,
+  port: Port,
+  dir, dbfilename: string,
+  password: string
+) =
+  pwd = password
+
   if sqlite3_open(
     dir & dbfilename,
     db,
@@ -2013,6 +2041,8 @@ proc start*(address: string, port: Port, dir, dbfilename: string) =
           let dataEntry = DataEntry(kind: ClientSocketEntry)
           dataEntry.remoteAddress = remoteAddress
           dataEntry.recvBuf.setLen(initialRecvBufLen)
+          if password == "":
+            dataEntry.authenticated = true
           selector.registerHandle(clientSocket, {Read}, dataEntry)
 
       else: # Client socket
@@ -2086,6 +2116,7 @@ when isMainModule:
     port = Port(6379)
     dir = ""
     dbfilename = "respite.sqlite"
+    requirepass = ""
 
   var args = commandLineParams()
   block:
@@ -2133,6 +2164,13 @@ when isMainModule:
             raise newException(CatchableError, "Bad args, --save must be \"\"")
         else:
           raise newException(CatchableError, "Bad args, --save expects a value")
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "--requirepass":
+        if i + 1 < args.len:
+          requirepass = args[i + 1]
+        else:
+          raise newException(CatchableError, "Bad args, --requirepass expects a password")
 
   if dbfilename == "":
     raise newException(CatchableError, "Bad args, empty dbfilename")
@@ -2142,4 +2180,4 @@ when isMainModule:
   if dir.len > 0 and dir[^1] != '/':
     dir.add '/'
 
-  start(host, port, dir, dbfilename)
+  start(host, port, dir, dbfilename, requirepass)

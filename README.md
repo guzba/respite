@@ -68,6 +68,7 @@ Below are the currently supported commands. Adding support for more commands is 
 
 #### Connections
 
+`AUTH`
 `PING`
 `ECHO`
 
@@ -95,6 +96,7 @@ Command line configuration compatibility with Redis is a goal, within reason. So
 * `--dir my/path`
 * `--dbfilename respite.sqlite`
 * `--save ""` (for in-memory only)
+* `--requirepass password`
 
 ## Networking
 

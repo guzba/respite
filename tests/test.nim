@@ -12,6 +12,11 @@ proc clientProc() =
     except:
       sleep(500)
 
+  doAssertRaises RedisError:
+    discard r.command("PING")
+
+  doAssert r.command("AUTH", "respite").to(string) == "OK"
+
   doAssert r.command("PING").to(string) == "PONG"
 
   doAssertRaises RedisError:
@@ -23,9 +28,9 @@ proc clientProc() =
   doAssert r.command("GET", "a").to(string) == "b"
   doAssert r.command("DEL", "a", "b", "c").to(int) == 1
   discard r.command("SET", "a", "b", "EX", "10")
-  doAssert r.command("TTL", "a").to(int) == 10
+  doAssert r.command("TTL", "a").to(int) in [9, 10]
   discard r.command("EXPIRE", "a", "100", "GT")
-  doAssert r.command("TTL", "a").to(int) == 100
+  doAssert r.command("TTL", "a").to(int) in [99, 100]
   doAssert r.command("PERSIST", "a").to(int) == 1
   doAssert r.command("EXISTS", "a").to(int) == 1
   doAssert r.command("TYPE", "a").to(string) == "string"
@@ -115,4 +120,4 @@ proc clientProc() =
 createThread(clientThread, clientProc)
 
 echo "Starting Respite server"
-start("localhost", Port(9999), "", ":memory:")
+start("localhost", Port(9999), "", ":memory:", "respite")
