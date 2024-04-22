@@ -15,4 +15,4 @@ jobs:
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - run: nimble install -y ready
-    - run: nimble test -y
+    - run: nim c -r -d:useMalloc tests/test.nim
