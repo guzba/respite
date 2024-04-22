@@ -3,12 +3,12 @@ WORKDIR /tmp
 COPY src src
 COPY respite.nimble .
 RUN nimble install -y
-RUN nim c -d:useMalloc -d:release -o:respite src/respite.nim
+RUN nim c -d:useMalloc -d:release -o:respite-server src/respite.nim
 
 FROM --platform=linux/amd64 alpine:latest
 RUN apk update && apk upgrade
 RUN apk add --no-cache sqlite-libs
 WORKDIR /respite
-COPY --from=builder /tmp/respite ./
+COPY --from=builder /tmp/respite-server ./
 EXPOSE 6379
-CMD ["./respite"]
+CMD ["./respite-server"]
