@@ -100,14 +100,14 @@ Command: `redis-benchmark -q -c 10 -n 1000000 -r 100000 -d 64 -t get,set`
 
 ### M1 MacBook Pro (local client and server)
 
-`respite-server --save ""`
+`respite-server --save ""` (in-memory only)
 
 ```
 SET: 72332.73 requests per second, p50=0.119 msec
 GET: 77447.34 requests per second, p50=0.111 msec
 ```
 
-`redis-server --save ""`
+`redis-server --save ""` (in-memory only)
 
 ```
 SET: 121212.12 requests per second, p50=0.063 msec
