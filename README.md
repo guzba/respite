@@ -86,6 +86,16 @@ For use-cases that are essentially just an in-memory cache, Respite can still wo
 * Good: use SQLite's in-memory database, avoiding all disk writes and clearing on restart.
 * Bad: missing support for key eviction policies and memory usage cap, etc.
 
+## Configuration
+
+Command line configuration compatibility with Redis is a goal, within reason. So far, the following configuration options are supported:
+
+* `-h hostname`
+* `-p port`
+* `--dir my/path`
+* `--dbfilename respite.sqlite`
+* `--save ""` (for in-memory only)
+
 ## Networking
 
 Both Respite and Redis use the same approach for networking and speak [RESP2](https://redis.io/docs/latest/develop/reference/protocol-spec/). This means you can carry over same expectations about connections and use the same clients as you would with Redis.
