@@ -2,9 +2,11 @@
 
 **NOTE: Respite is in active development. It is not yet production-ready.**
 
-Respite is a re-implementation of the Redis protocol on SQLite.
+Respite is an implementation of the Redis server API on SQLite.
 
-At its core, Respite is an epoll TCP server that speaks the Redis protocol and uses SQLite for its backing store. Just like Redis, Respite can easily handle a huge number of clients sending commands at the same time.
+Said another way, Respite is an epoll TCP server that speaks the Redis protocol and uses SQLite for its backing store.
+
+Just like Redis, Respite can easily handle a huge number of clients sending commands at the same time.
 
 ## Supported commands
 
