@@ -115,4 +115,4 @@ proc clientProc() =
 createThread(clientThread, clientProc)
 
 echo "Starting Respite server"
-start("localhost", Port(9999))
+start("localhost", Port(9999), "", ":memory:")
