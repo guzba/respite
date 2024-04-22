@@ -1905,8 +1905,8 @@ proc start*(port = Port(6379), address = "localhost") =
     raiseOSError(osLastError())
 
   selector.registerHandle(
-    redisSocket, 
-    {Read}, 
+    redisSocket,
+    {Read},
     DataEntry(kind: ServerSocketEntry)
   )
 
