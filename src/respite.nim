@@ -4,7 +4,7 @@ when not defined(nimdoc):
 
 import std/nativesockets, std/os, std/selectors, std/sets, std/options,
     std/strutils, std/parseutils, std/deques, respite/sqlite3, std/tables, std/times,
-    std/decls
+    std/decls, std/atomics
 
 when defined(linux):
   import std/posix
@@ -1856,7 +1856,9 @@ proc afterRecv(
       )
       dataEntry.bytesReceived -= startOfNextCmd.unsafeGet
 
-proc main() =
+var stopFlag: Atomic[bool]
+
+proc start*(port = Port(6379), address = "localhost") =
   let selector = newSelector[DataEntry]()
 
   let
@@ -1875,8 +1877,8 @@ proc main() =
 
   block:
     let ai = getAddrInfo(
-      "0.0.0.0", # TODO
-      Port(6379),
+      address,
+      port,
       Domain.AF_INET,
       SockType.SOCK_STREAM,
       Protocol.IPPROTO_TCP,
@@ -1896,7 +1898,7 @@ proc main() =
     readyKeys: array[maxEventsPerSelectLoop, ReadyKey]
     receivedFrom: seq[SocketHandle]
     needClosing: HashSet[SocketHandle]
-  while true:
+  while not stopFlag.load(moRelaxed):
     receivedFrom.setLen(0)
     needClosing.clear()
 
@@ -2015,5 +2017,8 @@ proc main() =
       finally:
         clientSocket.close()
 
+proc stop*() =
+  stopFlag.store(true, moRelaxed)
+
 when isMainModule:
-  main()
+  start()
