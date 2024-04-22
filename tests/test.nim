@@ -1,4 +1,4 @@
-import respite, ready, std/options, std/os
+import ready, respite, std/options, std/os
 
 var clientThread: Thread[void]
 

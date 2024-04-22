@@ -2,10 +2,9 @@ when not defined(nimdoc):
   when not defined(gcArc) and not defined(gcOrc):
     {.error: "Using --mm:arc or --mm:orc is required by Respite.".}
 
-import std/nativesockets, std/os, std/selectors, std/sets, std/options,
-    std/strutils, std/parseutils, std/deques, respite/sqlite3, std/tables, std/times,
-    std/decls, std/atomics
-
+import respite/sqlite3, std/atomics, std/decls, std/deques, std/nativesockets,
+    std/options, std/os, std/parseutils, std/selectors, std/sets, std/strutils,
+    std/tables, std/times
 when defined(linux):
   import std/posix
 
@@ -222,7 +221,7 @@ proc bindArgs(ps: PreparedStatement, args: sink Table[string, ArgumentValue]) =
           raise newException(CatchableError, "SQLite: " & $sqlite3_errmsg(db))
     else:
       raise newException(
-        CatchableError, 
+        CatchableError,
         "No argument for param '" & name & '\''
       )
 
@@ -402,7 +401,7 @@ let
     select field from redis_hashes
     where redis_key_id = :redis_key_id
   """)
-  countRedisSetMember= newPreparedStatement(db, """
+  countRedisSetMember = newPreparedStatement(db, """
     select count(*) from redis_sets
     where redis_key_id = :redis_key_id and member = :member
   """)
@@ -427,7 +426,7 @@ let
     select member from redis_sets
     where redis_key_id = :redis_key_id limit 1
   """)
-  countRedisSortedSetMember= newPreparedStatement(db, """
+  countRedisSortedSetMember = newPreparedStatement(db, """
     select count(*) from redis_sorted_sets
     where redis_key_id = :redis_key_id and member = :member
   """)
@@ -517,8 +516,8 @@ proc getRedisString(id: int): string =
     selectRedisString.reset()
 
 proc insertNewRedisKey(
-  key: string, 
-  kind: RedisKeyKind, 
+  key: string,
+  kind: RedisKeyKind,
   expires: int64 = 0
 ): RedisKey =
   try:
@@ -550,8 +549,8 @@ proc upsertRedisString2(id: int, value: string) =
     upsertRedisString.reset()
 
 proc insertNewRedisString(
-  key: string, 
-  value: string, 
+  key: string,
+  value: string,
   expires: int = 0
 ): RedisKey =
   let newRedisKey = insertNewRedisKey(key, StringKey, expires)
@@ -601,7 +600,7 @@ proc getRedisHashField(id: int, field: string): Option[string] =
     selectRedisHashField.reset()
 
 proc insertNewRedisHash(
-  key: string, 
+  key: string,
   field, value: string
 ): RedisKey =
   let newRedisKey = insertNewRedisKey(key, HashKey)
@@ -1113,8 +1112,8 @@ proc persistCommand(cmd: RedisCommand): string =
 
   let redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.expires.isSome:
-      setRedisKeyExpires(cmd.args[0], -1)
-      integerReply(1)
+    setRedisKeyExpires(cmd.args[0], -1)
+    integerReply(1)
   else:
     integerReply(0)
 
@@ -1276,7 +1275,7 @@ proc hdelCommand(cmd: RedisCommand): string =
       fields.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_hashes where redis_key_id = ? and field",
-      redisKey.unsafeGet.id, 
+      redisKey.unsafeGet.id,
       fields
     )
     discard sqlite3_finalize(stmt)
@@ -1360,7 +1359,7 @@ proc saddCommand(cmd: RedisCommand): string =
   var redisKey = getRedisKey(cmd.args[0])
   if redisKey.isSome and redisKey.unsafeGet.kind != SetKey:
     return wrongTypeErrorReply
-  
+
   if not redisKey.isSome:
     redisKey = some(insertNewRedisKey(cmd.args[0], SetKey))
 
@@ -1433,7 +1432,7 @@ proc sremCommand(cmd: RedisCommand): string =
       members.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_sets where redis_key_id = ? and member",
-      redisKey.unsafeGet.id, 
+      redisKey.unsafeGet.id,
       members
     )
     discard sqlite3_finalize(stmt)
@@ -1475,7 +1474,7 @@ proc zaddCommand(cmd: RedisCommand): string =
 
   var score: float64
   try:
-    if cmpIgnoreCase(cmd.args[1], "inf") == 0 or 
+    if cmpIgnoreCase(cmd.args[1], "inf") == 0 or
       cmpIgnoreCase(cmd.args[1], "+inf") == 0:
       score = Inf
     elif cmpIgnoreCase(cmd.args[1], "-inf") == 0:
@@ -1493,7 +1492,7 @@ proc zaddCommand(cmd: RedisCommand): string =
     inc inserted
 
   upsertRedisSortedSetMember2(redisKey.unsafeGet.id, cmd.args[2], score)
-  
+
   integerReply(inserted)
 
 proc zremCommand(cmd: RedisCommand): string =
@@ -1515,7 +1514,7 @@ proc zremCommand(cmd: RedisCommand): string =
       members.add(cmd.args[i])
     let stmt = stepSqlIn(
       "delete from redis_sorted_sets where redis_key_id = ? and member",
-      redisKey.unsafeGet.id, 
+      redisKey.unsafeGet.id,
       members
     )
     discard sqlite3_finalize(stmt)
@@ -1571,7 +1570,7 @@ proc zcountCommand(cmd: RedisCommand): string =
   var scores: array[2, float64]
   for i in 0 .. 1:
     try:
-      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or 
+      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or
         cmpIgnoreCase(cmd.args[1 + i], "+inf") == 0:
         scores[i] = Inf
       elif cmpIgnoreCase(cmd.args[1 + i], "-inf") == 0:
@@ -1581,7 +1580,12 @@ proc zcountCommand(cmd: RedisCommand): string =
     except:
       return floatErrorReply
 
-  integerReply(countRedisSortedSetMembersInRange2(redisKey.unsafeGet.id, scores[0], scores[1]))
+  let n = countRedisSortedSetMembersInRange2(
+    redisKey.unsafeGet.id,
+    scores[0],
+    scores[1]
+  )
+  integerReply(n)
 
 proc zremrangebyscoreCommand(cmd: RedisCommand): string =
   if cmd.args.len != 3:
@@ -1597,7 +1601,7 @@ proc zremrangebyscoreCommand(cmd: RedisCommand): string =
   var scores: array[2, float64]
   for i in 0 .. 1:
     try:
-      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or 
+      if cmpIgnoreCase(cmd.args[1 + i], "inf") == 0 or
         cmpIgnoreCase(cmd.args[1 + i], "+inf") == 0:
         scores[i] = Inf
       elif cmpIgnoreCase(cmd.args[1 + i], "-inf") == 0:
@@ -1713,7 +1717,11 @@ proc popRedisCommand(dataEntry: DataEntry, pos: var int): Option[RedisCommand] =
     inc pos
     var arrayLen: int
     block:
-      let numEnd = dataEntry.recvBuf.find("\r\n", pos, dataEntry.bytesReceived - 1)
+      let numEnd = dataEntry.recvBuf.find(
+        "\r\n",
+        pos,
+        dataEntry.bytesReceived - 1
+      )
       if numEnd < 0:
         return # Need more bytes
       arrayLen = redisParseInt(dataEntry.recvBuf, pos, numEnd - pos)
@@ -1726,7 +1734,11 @@ proc popRedisCommand(dataEntry: DataEntry, pos: var int): Option[RedisCommand] =
         return # Need more bytes
       if dataEntry.recvBuf[pos] == '$':
         inc pos
-        let numEnd = dataEntry.recvBuf.find("\r\n", pos, dataEntry.bytesReceived - 1)
+        let numEnd = dataEntry.recvBuf.find(
+          "\r\n",
+          pos,
+          dataEntry.bytesReceived - 1
+        )
         if numEnd < 0:
           return # Need more bytes
         let strLen = redisParseInt(dataEntry.recvBuf, pos, numEnd - pos)
@@ -1827,7 +1839,7 @@ proc afterRecv(
 
         if reply == "":
           raise newException(
-            CatchableError, 
+            CatchableError,
             "No reply for command '" & cmd.unsafeGet.raw & '\''
           )
 
@@ -1892,7 +1904,11 @@ proc start*(port = Port(6379), address = "localhost") =
   if nativesockets.listen(redisSocket, listenBacklogLen) < 0:
     raiseOSError(osLastError())
 
-  selector.registerHandle(redisSocket, {Read}, DataEntry(kind: ServerSocketEntry))
+  selector.registerHandle(
+    redisSocket, 
+    {Read}, 
+    DataEntry(kind: ServerSocketEntry)
+  )
 
   var
     readyKeys: array[maxEventsPerSelectLoop, ReadyKey]
