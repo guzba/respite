@@ -1870,7 +1870,7 @@ proc afterRecv(
 
 var stopFlag: Atomic[bool]
 
-proc start*(port = Port(6379), address = "localhost") =
+proc start*(address: string, port: Port) =
   let selector = newSelector[DataEntry]()
 
   let
@@ -2037,4 +2037,30 @@ proc stop*() =
   stopFlag.store(true, moRelaxed)
 
 when isMainModule:
-  start()
+  var
+    host = "localhost"
+    port = Port(6379)
+
+  var args = commandLineParams()
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "-h":
+        if i + 1 < args.len:
+          host = args[i + 1]
+        else:
+          raise newException(CatchableError, "Bad args, -h expects a hostname")
+  block:
+    for i in 0 ..< args.len:
+      if args[i] == "-p":
+        if i + 1 < args.len:
+          try:
+            port = Port(parseInt(args[i + 1]))
+          except:
+            raise newException(
+              CatchableError, 
+              "Bad number for -p '" & args[i + 1] & '\''
+            )
+        else:
+          raise newException(CatchableError, "Bad args, -p expects a port")
+
+  start(host, port)

@@ -7,7 +7,7 @@ proc clientProc() =
 
   for i in 0 ..< 10:
     try:
-      r = newRedisConn(port = Port(9999))
+      r = newRedisConn("localhost", Port(9999))
       break
     except:
       sleep(500)
@@ -115,4 +115,4 @@ proc clientProc() =
 createThread(clientThread, clientProc)
 
 echo "Starting Respite server"
-start(port = Port(9999))
+start("localhost", Port(9999))
