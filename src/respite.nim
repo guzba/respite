@@ -240,7 +240,7 @@ proc step(ps: PreparedStatement): bool =
 proc beginTransaction() =
   if sqlite3_exec(
     db,
-    "BEGIN IMMEDIATE",
+    "BEGIN",
     cast[SqliteCallback](nil),
     nil,
     nil
