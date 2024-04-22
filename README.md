@@ -104,9 +104,7 @@ Client connections are easy to open, can either be long-lived or transient, and 
 
 ## Performance
 
-As one would expect, Redis generally is able to handle more requests per second than Respite. In exchange, Respite has no memory storage limit and a better data persistance story.
-
-While more requests per second sounds great, it is not the only concern to think about! And please be mindful of whether or not you require even a fraction of the available requests per second.
+As one would expect, Redis generally is able to handle more requests per second than Respite. In exchange, Respite has no memory storage limit and a better data persistance story. While more requests per second sounds great, it is not the only concern to think about.
 
 Command: `redis-benchmark -q -c 10 -n 1000000 -r 100000 -d 64 -t get,set`
 
