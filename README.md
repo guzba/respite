@@ -8,6 +8,8 @@ At its core, Respite is a single-threaded epoll TCP server that speaks the Redis
 
 ## Supported commands
 
+Below are the currently supported commands. Adding support for more commands is ongoing.
+
 #### Transactions
 
 `MULTI`
