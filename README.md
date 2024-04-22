@@ -6,6 +6,67 @@ Respite is a re-implementation of the Redis protocol on SQLite.
 
 At its core, Respite is a single-threaded epoll TCP server that speaks the Redis protocol and uses SQLite for its backing store. Just like Redis, Respite can easily handle a huge number of clients sending commands at the same time.
 
+## Supported commands
+
+#### Transactions
+
+`MULTI`
+`EXEC`
+`DISCARD`
+
+#### Strings
+
+`GET`
+`SET`
+`DEL`
+`EXPIRE`
+`EXPIREAT`
+`TTL`
+`EXPIRETIME`
+`EXISTS`
+`PERSIST`
+`TYPE`
+`DECR`
+`DECRBY`
+`INCR`
+`INCRBY`
+`GETDEL`
+
+#### Hashes
+
+`HSET`
+`HSETNX`
+`HGET`
+`HINCRBY`
+`HDEL`
+`HEXISTS`
+`HGETALL`
+`HLEN`
+`HKEYS`
+
+#### Sets
+
+`SADD`
+`SCARD`
+`SISMEMBER`
+`SMEMBERS`
+`SREM`
+`SPOP`
+
+#### Sorted sets
+
+`ZADD`
+`ZREM`
+`ZCARD`
+`ZSCORE`
+`ZCOUNT`
+`ZREMRANGEBYSCORE`
+
+#### Connections
+
+`PING`
+`ECHO`
+
 ## Compatibility
 
 Respite is intended to be compatibile with existing Redis clients, libraries and tools including `redis-cli` and `redis-benchmark`. This means Respite can be thought of as a drop-in alternative to Redis for most projects.
@@ -63,4 +124,72 @@ GET: 56773.02 requests per second, p50=0.167 msec
 ```
 SET: 110399.65 requests per second, p50=0.071 msec
 GET: 125659.71 requests per second, p50=0.063 msec
+```
+
+#### Google Cloud n2d-standard-2 VM, 2 vCPU + 8GB, $60/mo
+
+Separate client and server in the same zone on same VPC.
+
+`respite-server --save ""`
+
+```
+```
+
+`redis-server --save ""`
+
+```
+```
+
+`respite-server`
+
+```
+```
+
+`redis-server --save "" --appendonly yes --appendfsync always`
+
+```
+```
+
+#### DigitalOcean Premium AMD droplet, 2 vCPU + 8GB, $48/mo
+
+`respite-server --save ""`
+
+```
+```
+
+`redis-server --save ""`
+
+```
+```
+
+`respite-server`
+
+```
+```
+
+`redis-server --save "" --appendonly yes --appendfsync always`
+
+```
+```
+
+#### Hetzner CCX13 VM, 2 vCPU + 8GB, $13/mo
+
+`respite-server --save ""`
+
+```
+```
+
+`redis-server --save ""`
+
+```
+```
+
+`respite-server`
+
+```
+```
+
+`redis-server --save "" --appendonly yes --appendfsync always`
+
+```
 ```
