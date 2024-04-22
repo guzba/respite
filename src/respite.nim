@@ -2142,6 +2142,4 @@ when isMainModule:
   if dir.len > 0 and dir[^1] != '/':
     dir.add '/'
 
-  echo dir & dbfilename
-
   start(host, port, dir, dbfilename)
