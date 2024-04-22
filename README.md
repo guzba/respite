@@ -73,7 +73,7 @@ Below are the currently supported commands. Adding support for more commands is 
 
 ## Compatibility
 
-Respite is intended to be compatibile with existing Redis clients, libraries and tools including `redis-cli` and `redis-benchmark`. This means Respite can be thought of as a drop-in alternative to Redis for most projects.
+Respite is intended to be compatibile with existing Redis clients, libraries and tools including `redis-cli` and `redis-benchmark`. This means Respite can be thought of as a drop-in alternative to Redis for many projects.
 
 While Respite may be a drop-in replacement, the use of SQLite does have implications that can either help or hurt depending on the specific use-case.
 
