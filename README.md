@@ -98,7 +98,7 @@ While more requests per second sounds great, it is not the only concern to think
 
 Command: `redis-benchmark -q -c 10 -n 1000000 -r 100000 -d 64 -t get,set`
 
-#### M1 MacBook Pro (local client and server)
+### M1 MacBook Pro (local client and server)
 
 `respite-server --save ""`
 
@@ -128,7 +128,7 @@ SET: 110399.65 requests per second, p50=0.071 msec
 GET: 125659.71 requests per second, p50=0.063 msec
 ```
 
-#### Google Cloud n2d-standard-2 VM, 2 vCPU + 8GB, $60/mo
+### Google Cloud n2d-standard-2 VM, 2 vCPU + 8GB, $60/mo
 
 Separate client and server in the same zone on same VPC.
 
@@ -152,7 +152,7 @@ Separate client and server in the same zone on same VPC.
 ```
 ```
 
-#### DigitalOcean Premium AMD droplet, 2 vCPU + 8GB, $48/mo
+### DigitalOcean Premium AMD droplet, 2 vCPU + 8GB, $48/mo
 
 `respite-server --save ""`
 
@@ -174,7 +174,7 @@ Separate client and server in the same zone on same VPC.
 ```
 ```
 
-#### Hetzner CCX13 VM, 2 vCPU + 8GB, $13/mo
+### Hetzner CCX13 VM, 2 vCPU + 8GB, $13/mo
 
 `respite-server --save ""`
 
