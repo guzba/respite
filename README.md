@@ -78,7 +78,7 @@ Respite is intended to be compatibile with existing Redis clients, libraries and
 
 While Respite may be a drop-in replacement, the use of SQLite does have implications that can either help or hurt depending on the specific use-case.
 
-For use-cases where data-persistance is desired (not just an in-memory cache), Respite is an excellent option:
+For use-cases where data persistence is desired (not just an in-memory cache), Respite is an excellent option:
 * Stores as much data as you have disk space for with no memory capacity limit.
 * Excellent write durability provided by SQLite.
 * Turns `MULTI`, `EXEC` into a real database transaction.
@@ -106,7 +106,7 @@ Client connections are easy to open, can either be long-lived or transient, and 
 
 ## Performance
 
-As one would expect, Redis generally is able to handle more requests per second than Respite. In exchange, Respite has no memory storage limit and a better data persistance story. While more requests per second sounds great, it is not the only concern to think about.
+As one would expect, Redis generally is able to handle more requests per second than Respite. In exchange, Respite has no memory storage limit and a better data persistence story. While more requests per second sounds great, it is not the only concern to think about.
 
 Command: `redis-benchmark -q -c 10 -n 1000000 -r 100000 -d 64 -t get,set`
 
