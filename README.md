@@ -27,23 +27,6 @@ Both Respite and Redis use the same approach for networking and speak [RESP2](ht
 
 Client connections are easy to open, can either be long-lived or transient, and you can have a lot or a little of them at any time. Concerns around connections that may be highly relevant for something like Postgres are a non-issue for Respite (and Redis itself).
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## Performance
 
-todo
-
-
-`docker build --no-cache --progress=plain .`
-
-`redis-benchmark -c 10 -n 1000000 -r 10000 -t get,set`
+`redis-benchmark -q -c 10 -n 1000000 -r 100000 -d 64 -t get,set`
